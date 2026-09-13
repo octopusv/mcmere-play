@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0-windows</TargetFramework><OutputType>WinExe</OutputType><UseWPF>true</UseWPF><AssemblyName>mcmere-play-setup</AssemblyName><ApplicationIcon>../../assets/mcmere.ico</ApplicationIcon></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Mcmere.Play.Core/Mcmere.Play.Core.csproj" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3537.50" />
+    <Resource Include="../../assets/mcmere.ico" Link="Assets/mcmere.ico" />
+    <Resource Include="../../ui/public/mcmere-icon-128.png" Link="Assets/mcmere.png" />
+    <EmbeddedResource Include="$(PayloadZip)" LogicalName="mcmere-play.payload.zip" Condition="'$(PayloadZip)' != ''" />
+  </ItemGroup>
+</Project>

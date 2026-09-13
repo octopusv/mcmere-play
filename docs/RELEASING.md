@@ -1,6 +1,6 @@
 # SetupとReleaseの方針
 
-実装前の配布仕様。現時点ではSetup生成スクリプト、CIのRelease workflow、配布用バイナリは存在しない。
+SetupとZIPはローカルで生成できる。CIのRelease workflow、署名済みアプリ更新情報、公開バイナリReleaseと実ゲームでの最終確認は準備中。
 
 ## 独立したアプリとして配布する
 
@@ -26,6 +26,19 @@ mcmere Playはmcmere本体とは別のバージョン、Setup、GitHub Release�
 - アプリ本体・ランタイム・インスタンス・キャッシュ・バックアップの所有範囲を明示する。
 
 ## Releaseの作成順
+
+ローカルの配布物はPowerShell 7から生成する。生成結果はartifactsに保存し、Gitへコミットしない。
+
+```powershell
+.\scripts\Publish.ps1 -Version 0.1.0
+.\scripts\Test-Installer.ps1 -SetupPath .\artifacts\mcmere-play-Setup-0.1.0.exe -DataDirectory .\.test-data\installer-acceptance
+```
+
+受け入れスクリプトは新しい.test-data内にだけインストールし、埋め込みpayload検証、日本語と空白を含む保存先、インストール情報からの保存先解決、実際のアプリ起動、同じ版の再導入、アンインストール、設定・ゲームデータ保持を確認する。`-UpgradeSetupPath`に上位版のSetupを指定すると、バージョンをまたぐ更新と更新後のアプリ表示も確認する。各工程のJSONとPNGを保存する。Windows登録は検証用の記録に置き換えるため、このスクリプト単体では実際のprotocol登録を証明しない。WindowsRegistrationTestsは別の一時HKCUキーとショートカットで本番と同じ登録コードを検証する。
+
+セットアップはユーザー単位で動作し、起動中のPlayを上書きしない。更新中のjournalからアプリと登録情報を回復し、破損payloadでは切り替えない。アンインストールは専用領域のappだけを削除する。通常の配布元からPrismやJavaを取得する処理と、MicrosoftのWebView2不足時の導入処理は別である。WebView2の導入分岐は、RuntimeがないWindows環境での追加検証が必要。
+
+現行のPublish.ps1が生成するSetupはコード署名されていない。SHA256SUMSとpayload検証はファイル整合性の確認であり、配布者のコード署名の代わりではない。
 
 1. リリースするcommitとバージョンを確定する。
 2. UI、.NET、同期エンジン、Prism連携、インストーラーの検証を実行する。

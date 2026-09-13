@@ -16,7 +16,8 @@ public partial class App : Application
             if (protocol is not null && e.Args.Length != 1) throw new ArgumentException("アプリで開くURLに追加の引数は指定できません。");
             var development = e.Args.Contains("--development");
             var smoke = e.Args.Contains("--smoke-test");
-            var root = Option("--data-root") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "mcmere-play");
+            var installation = await InstallationEngine.ReadInstallationAsync(AppContext.BaseDirectory);
+            var root = Option("--data-root") ?? installation?.DataRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "mcmere-play");
             var paths = new PlayPaths(root);
             if (smoke && !paths.Root.Contains(Path.DirectorySeparatorChar + ".test-data" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("検証には独立した.test-data内の保存先を指定してください。");

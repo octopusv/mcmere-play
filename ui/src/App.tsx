@@ -105,14 +105,14 @@ export default function App() {
       <button className="sidebar-link" onClick={() => { setUrl(""); setDiscovery(null); setDialog("add"); setError(null); }}><Plus size={16} />サーバーを追加</button>
       <div className="sidebar-spacer" />
       <button className="sidebar-link" onClick={() => setApplicationSettings(true)}><Settings size={16} />アプリ設定</button>
-      <small className="play-version">mcmere Play 0.1.0</small>
+      <small className="play-version">mcmere Play {view?.version ?? ""}</small>
     </aside>
     <main className="play-main">
       {!isNative ? <section className="play-empty"><h1>mcmere Playで開いてください</h1><p>この画面はWindowsアプリの中で利用できます。</p></section> :
       !view ? <section className="play-empty"><LoaderCircle className="spin" /><p>読み込み中</p><ErrorText message={error} /></section> :
       applicationSettings ? <><h1>アプリ設定</h1><div className="play-settings">
         <label>外観<select aria-label="外観" value={view.settings.theme} onChange={event => void act("theme", { theme: event.target.value })}><option value="system">システム設定</option><option value="light">ライト</option><option value="dark">ダーク</option></select></label>
-        <div className="play-settings-row"><div><strong>mcmere Play</strong><small>バージョン 0.1.0</small></div><button onClick={() => void act("open-releases")}>リリースを確認</button></div>
+        <div className="play-settings-row"><div><strong>mcmere Play</strong><small>バージョン {view.version}</small></div><button onClick={() => void act("open-releases")}>リリースを確認</button></div>
         <div className="play-settings-row"><div><strong>オープンソース</strong><small>MIT License</small></div><button onClick={() => void act("open-source")}>GitHubを開く</button></div>
         <div className="play-settings-row"><div><strong>診断ログ</strong><small>自動送信は行いません</small></div><button disabled={busy} onClick={() => void act("diagnostics")}>保存する</button></div>
       </div><ErrorText message={error} /></> :

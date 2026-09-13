@@ -4,7 +4,7 @@
 
 mcmere Playは、[mcmere](https://github.com/octopusv/mcmere)で管理するMinecraft Javaサーバー向けのWindowsクライアントです。サーバーが公開した構成にJava・NeoForge・MODを揃え、Prism Launcherからゲームを起動するアプリを開発します。
 
-> 現在は開発中です。Windowsアプリ、参加者UI、配布API接続、差分同期・復旧、専用Java・Prismの導入を実装しています。Setupと配布用Releaseは準備中で、実際のゲーム接続を含む受け入れ確認はまだ完了していません。
+> 現在は開発中です。Windowsアプリ、参加者UI、配布API接続、差分同期・復旧、専用Java・Prismの導入、SetupとZIPの生成を実装しています。配布用Releaseは準備中で、実際のゲーム接続を含む受け入れ確認はまだ完了していません。
 
 ## 予定している使い方
 
@@ -41,7 +41,7 @@ PlayにGoogleログインやメール登録はありません。入力名のホ�
 .\scripts\Build.ps1
 ```
 
-現在のテストは署名・ファイルハッシュ、依存選択、保存先、取得の再開、転送時の認証情報、ZIP展開、ランタイム修復、Prism設定の保持、配布APIクライアント、MOD同期・中断復旧・個人データ保持を対象としています。UI検証にはscripts/browser-smoke.cjs、ネイティブ起動検証にはアプリの--smoke-testを使います。ゲームの起動・接続やインストーラー全体の検証は別工程です。
+現在のテストは署名・ファイルハッシュ、依存選択、保存先、取得の再開、転送時の認証情報、ZIP展開、ランタイム修復、Prism設定の保持、配布APIクライアント、MOD同期・中断復旧・個人データ保持、Setupの更新・復旧・Windows登録を対象としています。UI検証にはscripts/browser-smoke.cjs、ネイティブ起動検証にはアプリの--smoke-testを使います。配布物の生成と受け入れスクリプトは[SetupとReleaseの方針](docs/RELEASING.md)を参照してください。ゲームの起動・接続は別途確認が必要です。
 
 ## ライセンス
 

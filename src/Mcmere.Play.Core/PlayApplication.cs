@@ -8,7 +8,7 @@ namespace Mcmere.Play.Core;
 public sealed record ServerView(string Id, string Stage = "idle", string? Error = null, string? ErrorCode = null,
     PackManifest? Manifest = null, ReleaseStatus? Status = null, SyncPlan? Plan = null, bool JavaReady = false,
     bool PrismReady = false, string? Directory = null, long Received = 0, long Total = 0, string? CurrentFile = null);
-public sealed record PlayView(PlaySettings Settings, IReadOnlyList<ServerView> Servers, bool Busy, bool CanCancel, ActivityState Activity);
+public sealed record PlayView(PlaySettings Settings, IReadOnlyList<ServerView> Servers, bool Busy, bool CanCancel, ActivityState Activity, string Version);
 public sealed record ServerDiscovery(DistributionTarget Target, ServerInfo Info);
 public interface IGameLauncher { void Start(ProcessStartInfo start); }
 public sealed class GameLauncher : IGameLauncher
@@ -70,7 +70,7 @@ public sealed class PlayApplication : IDisposable
         if (_wasGameRunning && !activity.GameRunning && _launchedServer is { } finished && Current(finished).Stage == "launching")
             Set(finished, Current(finished) with { Stage = "ready" });
         _wasGameRunning = activity.GameRunning;
-        return new(settings, settings.Servers!.Select(server => _views.GetValueOrDefault(server.Id) ?? new ServerView(server.Id)).ToArray(), _busy, _canCancel, activity);
+        return new(settings, settings.Servers!.Select(server => _views.GetValueOrDefault(server.Id) ?? new ServerView(server.Id)).ToArray(), _busy, _canCancel, activity, PlayVersion.Current);
     }
     public async Task<ServerDiscovery> DiscoverAsync(string url, CancellationToken ct = default)
     {

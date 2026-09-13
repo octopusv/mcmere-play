@@ -2,7 +2,7 @@
 
 Read [README.md](README.md), [docs/DESIGN.md](docs/DESIGN.md), and [docs/RELEASING.md](docs/RELEASING.md) before making changes.
 
-This repository is under active development. Run `scripts/Build.ps1` to verify the implemented foundation. The participant application and release installer are not yet available; do not describe planned functionality as working software.
+This repository is under active development. Run `scripts/Build.ps1` to verify the application and Setup, then use the packaging and acceptance commands in `docs/RELEASING.md`. Binary releases and real game acceptance are still pending; do not describe those checks as complete.
 
 - Keep server management and the distribution gateway in the mcmere repository. Integrate through versioned HTTP contracts, not direct database access or sibling-project references.
 - Treat the entered Minecraft name as a distribution eligibility hint, not verified identity. Do not add a required Google or email login.

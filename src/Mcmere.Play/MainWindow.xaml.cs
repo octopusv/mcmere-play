@@ -172,7 +172,7 @@ public partial class MainWindow : Window
         var dialog = new SaveFileDialog { Title = "診断ログを保存", FileName = "mcmere-play-diagnostics.zip", Filter = "ZIPファイル|*.zip", OverwritePrompt = true };
         if (dialog.ShowDialog(this) != true) return null;
         var state = await _application.ViewAsync(_lifetime.Token);
-        var report = new { version = "0.1.0", operatingSystem = RuntimeInformation.OSDescription, architecture = RuntimeInformation.ProcessArchitecture.ToString(),
+        var report = new { version = PlayVersion.Current, operatingSystem = RuntimeInformation.OSDescription, architecture = RuntimeInformation.ProcessArchitecture.ToString(),
             servers = state.Servers.Select(server => new { server.Stage, server.ErrorCode, minecraft = server.Manifest?.MinecraftVersion,
                 neoForge = server.Manifest?.Loader.Version, java = server.Manifest?.Java.Major,
                 changes = server.Plan?.Changes.Select(item => new { item.Scope, item.Path, item.Action }).ToArray() }) };

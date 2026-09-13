@@ -21,7 +21,7 @@ const path = require('node:path');
     page.on('pageerror', error => errors.push(error.message));
     const file = (id, required) => ({ id, path: 'mods/' + id + '.jar', name: id === 'main' ? 'Cobblemon' : '推奨MOD', version: '1.0', length: 3000000, sha512: 'a'.repeat(128),
       source: { kind: 'modrinth', projectId: id }, requirement: required ? 'required' : 'recommended', defaultEnabled: true, modIds: [id], requires: [] });
-    const state = { settings: { theme: 'light', selectedServer: 'fixture', servers: [{ id: 'fixture', name: 'Example server', playerName: null, memoryMiB: 4096, optionalChoices: {}, gameObserved: true, target: { origin: 'https://packs.example', publicId: '2'.repeat(32) } }] },
+    const state = { version: '0.1.0', settings: { theme: 'light', selectedServer: 'fixture', servers: [{ id: 'fixture', name: 'Example server', playerName: null, memoryMiB: 4096, optionalChoices: {}, gameObserved: true, target: { origin: 'https://packs.example', publicId: '2'.repeat(32) } }] },
       servers: [{ id: 'fixture', stage: 'idle', error: null, errorCode: null, manifest: null, plan: null, status: null, javaReady: false, prismReady: false, total: 0, received: 0 }],
       busy: false, canCancel: false, activity: { gameRunning: false, prismRunning: false, uncertain: false } };
     const clone = value => JSON.parse(JSON.stringify(value));

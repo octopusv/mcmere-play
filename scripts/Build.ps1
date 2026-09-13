@@ -23,4 +23,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Tests failed with exit code $LASTEXITCODE" }
     & $DotnetPath build 'src\Mcmere.Play\Mcmere.Play.csproj' -c $Configuration --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Desktop build failed.' }
+    & $DotnetPath build 'src\Mcmere.Play.Setup\Mcmere.Play.Setup.csproj' -c $Configuration --nologo
+    if ($LASTEXITCODE -ne 0) { throw 'Setup build failed.' }
 } finally { Pop-Location }

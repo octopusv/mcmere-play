@@ -104,7 +104,7 @@ public sealed class DistributionClient(HttpClient http, DistributionTarget targe
         var manifest = ManifestSigning.Verify(envelope, _trustedKey, target.PublicId, minimumSequence);
         if (manifest.ReleaseId != current.ReleaseId || manifest.Sequence != current.Sequence)
             throw new DistributionException("release_changed", "配布内容が更新されました。もう一度確認してください。", true);
-        if (!Version.TryParse(manifest.MinimumPlayVersion, out var required) || required > new Version(0, 1, 0))
+        if (!Version.TryParse(manifest.MinimumPlayVersion, out var required) || required > Version.Parse(PlayVersion.Current))
             throw new DistributionException("application_update_required", "この配布版にはアプリの更新が必要です。");
         return new(current, envelope, manifest);
     }
