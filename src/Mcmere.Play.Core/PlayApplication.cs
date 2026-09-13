@@ -8,7 +8,7 @@ namespace Mcmere.Play.Core;
 public sealed record ServerView(string Id, string Stage = "idle", string? Error = null, string? ErrorCode = null,
     PackManifest? Manifest = null, ReleaseStatus? Status = null, SyncPlan? Plan = null, bool JavaReady = false,
     bool PrismReady = false, string? Directory = null, long Received = 0, long Total = 0, string? CurrentFile = null);
-public sealed record PlayView(PlaySettings Settings, IReadOnlyList<ServerView> Servers, bool Busy, bool CanCancel, ActivityState Activity, string Version);
+public sealed record PlayView(PlaySettings Settings, IReadOnlyList<ServerView> Servers, bool Busy, bool CanCancel, ActivityState Activity, string Version, AppUpdateView? Update = null);
 public sealed record ServerDiscovery(DistributionTarget Target, ServerInfo Info);
 public interface IGameLauncher { void Start(ProcessStartInfo start); }
 public sealed class GameLauncher : IGameLauncher

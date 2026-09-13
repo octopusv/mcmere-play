@@ -23,7 +23,7 @@ const path = require('node:path');
       source: { kind: 'modrinth', projectId: id }, requirement: required ? 'required' : 'recommended', defaultEnabled: true, modIds: [id], requires: [] });
     const state = { version: '0.1.0', settings: { theme: 'light', selectedServer: 'fixture', servers: [{ id: 'fixture', name: 'Example server', playerName: null, memoryMiB: 4096, optionalChoices: {}, gameObserved: true, target: { origin: 'https://packs.example', publicId: '2'.repeat(32) } }] },
       servers: [{ id: 'fixture', stage: 'idle', error: null, errorCode: null, manifest: null, plan: null, status: null, javaReady: false, prismReady: false, total: 0, received: 0 }],
-      busy: false, canCancel: false, activity: { gameRunning: false, prismRunning: false, uncertain: false } };
+      busy: false, canCancel: false, update: { stage: 'idle', version: null, notes: null, length: 0, received: 0, queued: false, error: null }, activity: { gameRunning: false, prismRunning: false, uncertain: false } };
     const clone = value => JSON.parse(JSON.stringify(value));
     let settingsCorrupt = false;
     await page.exposeBinding('__playBridge', async (_source, request) => {
@@ -31,6 +31,9 @@ const path = require('node:path');
       const row = state.servers[0];
       if (request.op === 'state' && settingsCorrupt) return { id: request.id, ok: false, error: { code: 'settings_corrupt', message: 'アプリ設定を読み取れません。' } };
       if (request.op === 'recover-settings') settingsCorrupt = false;
+      if (request.op === 'check-update') Object.assign(state.update, { stage: 'available', version: '0.1.1', notes: 'アプリ更新の検証用表示', length: 120000000 });
+      if (request.op === 'download-update') Object.assign(state.update, { stage: 'ready', received: state.update.length });
+      if (request.op === 'queue-update') state.update.queued = request.body.queued;
       if (request.op === 'state') return { id: request.id, ok: true, value: clone(state) };
       if (request.op === 'identify') {
         if (request.body.name !== 'PlayerName') return { id: request.id, ok: false, error: { code: 'name_not_listed', message: 'ホワイトリストで名前を確認できません。' } };
@@ -74,6 +77,15 @@ const path = require('node:path');
     await page.getByRole('button', { name: 'アプリ設定', exact: true }).click();
     await page.getByLabel('外観', { exact: true }).selectOption('dark');
     await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+    state.activity.prismRunning = true;
+    await page.getByRole('button', { name: '更新を確認', exact: true }).click();
+    await page.getByRole('button', { name: /^更新を準備/ }).click();
+    await page.getByRole('button', { name: 'Prismとゲームの終了後に更新', exact: true }).click();
+    await page.getByRole('button', { name: '更新予約を取り消す', exact: true }).waitFor();
+    await page.screenshot({ path: path.join(out, 'app-update-waiting.png'), fullPage: true });
+    await page.getByRole('button', { name: '更新予約を取り消す', exact: true }).click();
+    await page.getByRole('button', { name: 'Prismとゲームの終了後に更新', exact: true }).waitFor();
+    state.activity.prismRunning = false;
     await page.getByRole('button', { name: /Example server/ }).click();
     await page.getByRole('tab', { name: '概要', exact: true }).click();
     await page.setViewportSize({ width: 860, height: 760 });
@@ -86,7 +98,7 @@ const path = require('node:path');
     await page.getByRole('button', { name: '保存済みの設定を復元', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('.play-app')?.dataset.ready === 'true');
     if (errors.length) throw new Error(errors.join('\n'));
-    for (const op of ['identify', 'prepare', 'optional', 'memory', 'theme', 'recover-settings']) if (!calls.includes(op)) throw new Error('Missing native operation: ' + op);
+    for (const op of ['identify', 'prepare', 'optional', 'memory', 'theme', 'recover-settings', 'check-update', 'download-update', 'queue-update']) if (!calls.includes(op)) throw new Error('Missing native operation: ' + op);
     fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ passed: true, transport: 'synthetic native bridge', calls, errors, realGameConnectionTested: false }, null, 2));
     console.log('Play UI checks passed.');
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

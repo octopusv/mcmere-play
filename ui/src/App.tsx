@@ -115,7 +115,19 @@ export default function App() {
       </> : <><LoaderCircle className="spin" /><p>読み込み中</p></>}</section> :
       applicationSettings ? <><h1>アプリ設定</h1><div className="play-settings">
         <label>外観<select aria-label="外観" value={view.settings.theme} onChange={event => void act("theme", { theme: event.target.value })}><option value="system">システム設定</option><option value="light">ライト</option><option value="dark">ダーク</option></select></label>
-        <div className="play-settings-row"><div><strong>mcmere Play</strong><small>バージョン {view.version}</small></div><button onClick={() => void act("open-releases")}>リリースを確認</button></div>
+        <div className="play-settings-row"><div><strong>mcmere Play</strong><small>バージョン {view.version}</small></div><button data-action="check-update" disabled={requesting || view.update?.queued} onClick={() => void act("check-update")}>更新を確認</button></div>
+        {view.update && <div className="play-update" data-stage={view.update.stage}>
+          {view.update.stage === "current" && <p>利用できる更新はありません。</p>}
+          {view.update.stage === "unpublished" && <p>配布用の更新情報はまだ公開されていません。</p>}
+          {view.update.version && <><strong>バージョン {view.update.version}</strong><p>{view.update.notes || "mcmere Playの更新"}</p></>}
+          {view.update.stage === "checking" && <p>更新情報を確認しています。</p>}
+          {view.update.stage === "downloading" && <p>更新を取得しています · {size(view.update.received)} / {size(view.update.length)}</p>}
+          {view.update.stage === "available" && <button disabled={requesting} onClick={() => void act("download-update")}>更新を準備 · {size(view.update.length)}</button>}
+          {view.update.stage === "ready" && !view.update.queued && <button data-action="apply-update" disabled={busy} onClick={() => void act("queue-update", { queued: true })}>{view.activity.gameRunning || view.activity.prismRunning || view.activity.uncertain ? "Prismとゲームの終了後に更新" : "再起動して更新"}</button>}
+          {view.update.queued && <><p>Prismとゲームの終了後に更新します。Playは開いたままにしてください。</p><button disabled={requesting} onClick={() => void act("queue-update", { queued: false })}>更新予約を取り消す</button></>}
+          <ErrorText message={view.update.error} />
+          {view.update.error && <button onClick={() => void act("open-releases")}>リリースを開く</button>}
+        </div>}
         <div className="play-settings-row"><div><strong>オープンソース</strong><small>MIT License</small></div><button onClick={() => void act("open-source")}>GitHubを開く</button></div>
         <div className="play-settings-row"><div><strong>診断ログ</strong><small>自動送信は行いません</small></div><button disabled={busy} onClick={() => void act("diagnostics")}>保存する</button></div>
       </div><ErrorText message={error} /></> :

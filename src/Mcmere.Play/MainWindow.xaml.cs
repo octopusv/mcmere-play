@@ -18,10 +18,14 @@ public partial class MainWindow : Window
 {
     private const string Origin = "https://app.mcmere-play.local";
     private readonly PlayApplication _application;
+    private readonly AppUpdater _updates;
+    private readonly DateTimeOffset _processStarted;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly bool _development;
     private readonly bool _smoke;
     private readonly bool _recoverSettingsSmoke;
+    private readonly bool _checkUpdateSmoke;
+    private readonly SmokeUpdateLauncher? _smokeUpdateLauncher;
     private readonly string? _output;
     private string? _pendingLink;
     private bool _ready;
@@ -29,11 +33,16 @@ public partial class MainWindow : Window
     private bool _dirty = true;
     private ActivityState? _lastActivity;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(400) };
-    public MainWindow(PlayPaths paths, bool development, bool smoke, string? output, string? link, bool recoverSettingsSmoke = false)
+    public MainWindow(PlayPaths paths, bool development, bool smoke, string? output, string? link, bool recoverSettingsSmoke = false, bool checkUpdateSmoke = false, bool applyUpdateSmoke = false)
     {
         InitializeComponent();
         _application = new(paths, development); _development = development; _smoke = smoke; _output = output; _pendingLink = link;
+        _smokeUpdateLauncher = applyUpdateSmoke ? new SmokeUpdateLauncher(output + ".setup.json") : null;
+        _updates = new(paths, new ProcessActivity(paths), _smokeUpdateLauncher);
+        using (var own = Process.GetCurrentProcess()) _processStarted = new DateTimeOffset(own.StartTime.ToUniversalTime());
+        _updates.Changed += () => _dirty = true;
         _recoverSettingsSmoke = recoverSettingsSmoke;
+        _checkUpdateSmoke = checkUpdateSmoke;
         _application.Changed += () => _dirty = true;
         _timer.Tick += async (_, _) => await EmitAsync();
         if (smoke) { ShowActivated = false; ShowInTaskbar = false; Left = -15000; Top = -15000; WindowStartupLocation = WindowStartupLocation.Manual; }
@@ -42,6 +51,8 @@ public partial class MainWindow : Window
     {
         try
         {
+            try { await _updates.InitializeAsync(_lifetime.Token); }
+            catch (DistributionException) { }
             var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: PlayFiles.Child(_application.Paths.Root, "webview"));
             await Browser.EnsureCoreWebView2Async(environment);
             Browser.CoreWebView2.SetVirtualHostNameToFolderMapping("app.mcmere-play.local", Path.Combine(AppContext.BaseDirectory, "ui"), CoreWebView2HostResourceAccessKind.DenyCors);
@@ -87,16 +98,22 @@ public partial class MainWindow : Window
         _emitting = true;
         try
         {
-            var view = await _application.ViewAsync(_lifetime.Token);
+            var view = await CurrentViewAsync();
             if (_dirty || view.Activity != _lastActivity)
             {
                 _dirty = false; _lastActivity = view.Activity; Post(new { type = "state", value = view });
+            }
+            if (await _updates.TryStartAsync(Environment.ProcessId, _processStarted, view.Busy, _lifetime.Token))
+            {
+                if (_smokeUpdateLauncher is not null) await FinishSmokeAsync(true, new { updateHandoffTested = true, setupProcessId = _smokeUpdateLauncher.ProcessId, setupReport = _smokeUpdateLauncher.Report, appUpdate = _updates.View });
+                else Application.Current.Shutdown(0);
             }
         }
         catch (OperationCanceledException) { }
         catch (Exception error) { Post(new { type = "error", message = error.Message, code = (error as DistributionException)?.Code }); }
         finally { _emitting = false; }
     }
+    private async Task<PlayView> CurrentViewAsync() => (await _application.ViewAsync(_lifetime.Token)) with { Update = _updates.View };
     private async void OnMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         if (!OwnOrigin(e.Source) || e.WebMessageAsJson.Length > 65536) return;
@@ -114,7 +131,10 @@ public partial class MainWindow : Window
             object? result = null;
             switch (op)
             {
-                case "state": result = await _application.ViewAsync(_lifetime.Token); break;
+                case "state": result = await CurrentViewAsync(); break;
+                case "check-update": await _updates.CheckAsync(_lifetime.Token); break;
+                case "download-update": await _updates.DownloadAsync(_lifetime.Token); break;
+                case "queue-update": await _updates.QueueAsync(Flag("queued"), _lifetime.Token); break;
                 case "recover-settings": await _application.RestoreSettingsAsync(_lifetime.Token); break;
                 case "discover": result = await _application.DiscoverAsync(Text("url"), _lifetime.Token); break;
                 case "add": result = await _application.AddAsync(Text("url"), Text("keyId"), _lifetime.Token); break;
@@ -147,7 +167,7 @@ public partial class MainWindow : Window
                     break;
                 case "diagnostics": result = await DiagnosticsAsync(); break;
                 case "open-source": External("https://github.com/octopusv/mcmere-play"); break;
-                case "open-releases": External("https://github.com/octopusv/mcmere-play/releases/latest"); break;
+                case "open-releases": External("https://github.com/octopusv/mcmere-play/releases"); break;
                 case "manual-page":
                     var current = await _application.ViewAsync(_lifetime.Token);
                     var file = current.Servers.FirstOrDefault(server => server.Id == Text("serverId"))?.Manifest?.Files.FirstOrDefault(file => file.Id == Text("fileId"));
@@ -197,6 +217,43 @@ public partial class MainWindow : Window
         try
         {
             await Task.Delay(1200, _lifetime.Token);
+            if (_smokeUpdateLauncher is not null)
+            {
+                await Browser.CoreWebView2.ExecuteScriptAsync("[...document.querySelectorAll('button')].find(button => button.textContent === 'アプリ設定')?.click()");
+                var clicked = false;
+                for (var attempt = 0; attempt < 50; attempt++)
+                {
+                    if (await Browser.CoreWebView2.ExecuteScriptAsync("(() => { const button = document.querySelector('[data-action=\"apply-update\"]'); if (!button || button.disabled) return false; button.click(); return true; })()") == "true") { clicked = true; break; }
+                    await Task.Delay(100, _lifetime.Token);
+                }
+                if (!clicked) throw new InvalidOperationException("更新を適用する操作が表示されませんでした。");
+                for (var attempt = 0; attempt < 100; attempt++)
+                {
+                    if (_updates.View.Queued || _updates.View.Stage == "applying") return;
+                    if (_updates.View.Error is not null) throw new InvalidOperationException(_updates.View.Error);
+                    await Task.Delay(100, _lifetime.Token);
+                }
+                throw new InvalidOperationException("更新が予約されませんでした。");
+            }
+            if (_checkUpdateSmoke)
+            {
+                await Browser.CoreWebView2.ExecuteScriptAsync("[...document.querySelectorAll('button')].find(button => button.textContent === 'アプリ設定')?.click()");
+                var clicked = false;
+                for (var attempt = 0; attempt < 50; attempt++)
+                {
+                    if (await Browser.CoreWebView2.ExecuteScriptAsync("(() => { const button = document.querySelector('[data-action=\"check-update\"]'); if (!button || button.disabled) return false; button.click(); return true; })()") == "true") { clicked = true; break; }
+                    await Task.Delay(100, _lifetime.Token);
+                }
+                if (!clicked) throw new InvalidOperationException("更新確認の操作が表示されませんでした。");
+                for (var attempt = 0; attempt < 350; attempt++)
+                {
+                    if (_updates.View.Stage is "unpublished" or "current" or "available" or "ready" || _updates.View.Error is not null) break;
+                    await Task.Delay(100, _lifetime.Token);
+                }
+                if (_updates.View.Error is not null || _updates.View.Stage is not ("unpublished" or "current" or "available" or "ready"))
+                    throw new InvalidOperationException(_updates.View.Error ?? "アプリの更新確認が完了しませんでした。");
+                await Task.Delay(500, _lifetime.Token);
+            }
             if (_recoverSettingsSmoke)
             {
                 var clicked = await Browser.CoreWebView2.ExecuteScriptAsync("(() => { const button = document.querySelector('[data-action=\"recover-settings\"]'); if (!button || button.disabled) return false; button.click(); return true; })()");
@@ -212,8 +269,9 @@ public partial class MainWindow : Window
             using var result = JsonDocument.Parse(json);
             var state = await _application.ViewAsync(_lifetime.Token);
             await FinishSmokeAsync(result.RootElement.GetProperty("ready").GetBoolean() && !result.RootElement.GetProperty("hasError").GetBoolean() && !state.Activity.Uncertain,
-                new { ui = result.RootElement.Clone(), activity = state.Activity, settingsRecoveryTested = _recoverSettingsSmoke });
+                new { ui = result.RootElement.Clone(), activity = state.Activity, settingsRecoveryTested = _recoverSettingsSmoke, updateCheckTested = _checkUpdateSmoke, appUpdate = _updates.View });
         }
+        catch (OperationCanceledException) when (_smokeUpdateLauncher is not null && _updates.View.Stage == "applying") { }
         catch (Exception error) { await FinishSmokeAsync(false, new { error = error.Message }); }
     }
     private async Task FinishSmokeAsync(bool success, object detail)
@@ -233,6 +291,18 @@ public partial class MainWindow : Window
     }
     private void OnClosing(object? sender, CancelEventArgs e)
     {
-        _ready = false; _timer.Stop(); _lifetime.Cancel(); _application.Dispose(); Browser.Dispose();
+        _ready = false; _timer.Stop(); _lifetime.Cancel(); _application.Dispose(); _updates.Dispose(); Browser.Dispose();
+    }
+    private sealed class SmokeUpdateLauncher(string report) : IAppUpdateLauncher
+    {
+        public string Report { get; } = report;
+        public int ProcessId { get; private set; }
+        public void Start(ProcessStartInfo start)
+        {
+            foreach (var value in new[] { "--test-mode", "--report", Report }) start.ArgumentList.Add(value);
+            start.CreateNoWindow = true; start.WindowStyle = ProcessWindowStyle.Hidden;
+            using var process = Process.Start(start) ?? throw new InvalidOperationException("更新用セットアップを起動できません。");
+            ProcessId = process.Id;
+        }
     }
 }

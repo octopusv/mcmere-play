@@ -77,6 +77,33 @@ public sealed class InstallationTests : IDisposable
         Assert.Equal("keep", await File.ReadAllTextAsync(Path.Combine(Data, "app", "unrelated.txt")));
     }
     [Fact]
+    public async Task SignedUpdateVersionMustMatchPayloadAndBeNewerThanInstalledApp()
+    {
+        var engine = new InstallationEngine(_registration);
+        await engine.InstallAsync(await Package("0.2.0"), Data);
+        var wrong = await Package("0.3.0");
+        Assert.Equal("update_version", (await Assert.ThrowsAsync<DistributionException>(() => engine.InstallAsync(wrong, Data, expectedVersion: "0.4.0"))).Code);
+        var old = await Package("0.1.0");
+        Assert.Equal("update_version", (await Assert.ThrowsAsync<DistributionException>(() => engine.InstallAsync(old, Data, expectedVersion: "0.1.0"))).Code);
+        Assert.Equal("0.2.0", (await InstallationEngine.ReadInstallationAsync(Path.Combine(Data, "app")))!.Version);
+    }
+    [Fact]
+    public async Task RepeatedUpgradesRetainTwoVerifiedBackupsAndLeaveUnownedDirectoriesAlone()
+    {
+        var engine = new InstallationEngine(_registration);
+        await engine.InstallAsync(await Package("0.1.0"), Data);
+        var unowned = Path.Combine(Data, ".setup", "previous-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(unowned);
+        await File.WriteAllTextAsync(Path.Combine(unowned, "personal.txt"), "keep");
+        foreach (var version in new[] { "0.2.0", "0.3.0", "0.4.0" }) await engine.InstallAsync(await Package(version), Data);
+        var backups = Directory.GetDirectories(Path.Combine(Data, ".setup"), "previous-*").Where(path => path != unowned).ToArray();
+        Assert.Equal(2, backups.Length);
+        var versions = new List<string>();
+        foreach (var backup in backups) versions.Add((await InstallationPackage.VerifyAsync(backup)).Version);
+        Assert.Equal(new[] { "0.2.0", "0.3.0" }, versions.Order(StringComparer.Ordinal));
+        Assert.Equal("keep", await File.ReadAllTextAsync(Path.Combine(unowned, "personal.txt")));
+    }
+    [Fact]
     public async Task InsufficientSpaceIsDetectedBeforeExtraction()
     {
         var package = await Package("0.1.0");

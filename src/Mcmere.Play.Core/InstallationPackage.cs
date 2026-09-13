@@ -31,6 +31,7 @@ public static class InstallationPackage
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in package.Files)
         {
+            if (file is null) throw new DistributionException("invalid_payload", "セットアップのファイル情報が不正です。");
             var path = PlayFiles.Child(directory, file.Path);
             ManifestValidation.Hash(file.Sha256, 64);
             if (!names.Add(file.Path) || file.Path is "payload.json" or "installation.json" || file.Length < 0 ||
@@ -50,7 +51,7 @@ public static class InstallationPackage
 
 public sealed class InstallationEngine(IInstallationRegistration registration, IAvailableSpace? capacity = null)
 {
-    public async Task<InstallationInfo> InstallAsync(string zipPath, string dataRoot, IProgress<string>? progress = null, CancellationToken ct = default)
+    public async Task<InstallationInfo> InstallAsync(string zipPath, string dataRoot, IProgress<string>? progress = null, CancellationToken ct = default, string? expectedVersion = null)
     {
         dataRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dataRoot));
         if (Path.TrimEndingDirectorySeparator(Path.GetPathRoot(dataRoot)!) == dataRoot) throw new DistributionException("invalid_destination", "ドライブの直下は保存先に指定できません。");
@@ -81,6 +82,8 @@ public sealed class InstallationEngine(IInstallationRegistration registration, I
             await SafeArchive.ExtractAsync(zipPath, staging, ct);
             if (File.Exists(PlayFiles.Child(staging, "installation.json"))) throw new DistributionException("invalid_payload", "配布物にインストール情報が含まれています。");
             package = await InstallationPackage.VerifyAsync(staging, ct);
+            if (expectedVersion is not null && (package.Version != expectedVersion || previous is not null && Version.Parse(previous.Version) >= Version.Parse(expectedVersion)))
+                throw new DistributionException("update_version", "署名済みの更新版とセットアップ、または現在のアプリのバージョンが一致しません。");
         }
         catch
         {
@@ -104,6 +107,8 @@ public sealed class InstallationEngine(IInstallationRegistration registration, I
             await PlayFiles.WriteAtomicAsync(journalPath, DistributionJson.Bytes(journal with { Phase = "committed" }), ct);
             committed = true;
             File.Delete(journalPath);
+            try { await PruneBackupsAsync(dataRoot, CancellationToken.None); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or DistributionException) { }
             progress?.Report("インストールが完了しました");
             return info;
         }
@@ -114,9 +119,10 @@ public sealed class InstallationEngine(IInstallationRegistration registration, I
             throw;
         }
     }
-    public static async Task<InstallationInfo?> ReadInstallationAsync(string appDirectory, CancellationToken ct = default)
+    public static Task<InstallationInfo?> ReadInstallationAsync(string appDirectory, CancellationToken ct = default) => ReadInstallationAtAsync(appDirectory, appDirectory, ct);
+    private static async Task<InstallationInfo?> ReadInstallationAtAsync(string directory, string appDirectory, CancellationToken ct)
     {
-        var file = PlayFiles.Child(appDirectory, "installation.json");
+        var file = PlayFiles.Child(directory, "installation.json");
         if (!File.Exists(file)) return null;
         if (new FileInfo(file).Length > 16384) throw new DistributionException("invalid_installation", "インストール情報が不正です。");
         try
@@ -158,7 +164,11 @@ public sealed class InstallationEngine(IInstallationRegistration registration, I
                 if (placed != journal.Installation) throw new DistributionException("setup_recovery", "回復対象のアプリを確認できません。");
                 Directory.Move(app, failed);
             }
-            if (journal.HadPrevious && Directory.Exists(backup) && !Directory.Exists(app)) Directory.Move(backup, app);
+            if (journal.HadPrevious && Directory.Exists(backup) && !Directory.Exists(app))
+            {
+                _ = await ReadInstallationAtAsync(backup, app, ct) ?? throw new DistributionException("setup_recovery", "以前のアプリの所有情報を確認できません。");
+                Directory.Move(backup, app);
+            }
             if (journal.HadPrevious)
             {
                 var previous = await ReadInstallationAsync(app, ct) ?? throw new DistributionException("setup_recovery", "以前のアプリを復元できません。");
@@ -173,6 +183,32 @@ public sealed class InstallationEngine(IInstallationRegistration registration, I
             await registration.ApplyAsync(current, ct);
         }
         File.Delete(path);
+    }
+    private static async Task PruneBackupsAsync(string root, CancellationToken ct)
+    {
+        var directory = PlayFiles.Child(root, ".setup");
+        if (!Directory.Exists(directory)) return;
+        var verified = new List<(string Directory, DateTimeOffset InstalledAt)>();
+        foreach (var entry in Directory.EnumerateDirectories(directory, "previous-*"))
+        {
+            var name = Path.GetFileName(entry);
+            if (!Guid.TryParseExact(name["previous-".Length..], "N", out _)) continue;
+            try
+            {
+                var owned = PlayFiles.Child(root, ".setup/" + name);
+                var info = await ReadInstallationAtAsync(owned, PlayFiles.Child(root, "app"), ct);
+                if (info is null) continue;
+                var package = await InstallationPackage.VerifyAsync(owned, ct);
+                if (package.Version != info.Version) continue;
+                verified.Add((owned, info.InstalledAt));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or DistributionException or ArgumentException) { }
+        }
+        foreach (var backup in verified.OrderByDescending(value => value.InstalledAt).ThenBy(value => value.Directory, StringComparer.Ordinal).Skip(2))
+        {
+            try { _ = PlayFiles.Files(backup.Directory).ToArray(); Directory.Delete(backup.Directory, true); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or DistributionException) { }
+        }
     }
     private static FileStream Lock(string root, string name)
     {

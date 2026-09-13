@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private string? _payload;
     private string? _temporaryPayloadDirectory;
     private InstallationInfo? _installed;
+    private string? _updateVersion;
     private string? Option(string name) { var index = Array.IndexOf(_args, name); return index >= 0 && index + 1 < _args.Length ? _args[index + 1] : null; }
     public MainWindow(string[] args)
     {
@@ -44,6 +45,18 @@ public partial class MainWindow : Window
                 throw new ArgumentException("検証用の保存先には.test-data内のフォルダーを指定してください。");
             var runtime = WebViewAvailable();
             Prerequisite.Text = runtime ? "WebView2 Runtimeを確認しました。" : "WebView2 Runtimeの導入が必要です。";
+            if (Option("--update-request") is { } request)
+            {
+                _busy = true; ChooseButton.IsEnabled = false; InstallButton.IsEnabled = false;
+                Status.Text = "アプリの終了を待っています";
+                var paths = new PlayPaths(RootPath.Text);
+                var verified = await AppUpdateHandoffVerifier.VerifyAsync(request, paths, Environment.ProcessPath!);
+                _updateVersion = verified.Manifest.Version;
+                await PlayFiles.WriteAtomicAsync(PlayFiles.Child(paths.Root, "updates/handoff-status.json"), DistributionJson.Bytes(new { stage = "waiting-parent", version = _updateVersion }));
+                await AppUpdateHandoffVerifier.WaitForParentAsync(verified.Handoff);
+                await new ProcessActivity(paths).RequireIdleAsync("app-update", default);
+                await InstallAsync(); return;
+            }
             if (_smoke)
             {
                 await ReportAsync(true, new { rendered = true, webView2 = runtime });
@@ -60,7 +73,7 @@ public partial class MainWindow : Window
             }
             if (_args.Contains("--install")) await InstallAsync();
         }
-        catch (Exception error) { Status.Text = error.Message; Details.Text = error.ToString(); await ReportAsync(false, new { error = error.Message }); if (_test || _smoke) Application.Current.Shutdown(1); }
+        catch (Exception error) { _busy = false; Status.Text = error.Message; Details.Text = error.ToString(); await ReportAsync(false, new { error = error.Message }); if (_test || _smoke) Application.Current.Shutdown(1); }
     }
     private async Task<string> PayloadAsync()
     {
@@ -82,9 +95,10 @@ public partial class MainWindow : Window
     private async void Install_Click(object sender, RoutedEventArgs e) => await InstallAsync();
     private async Task InstallAsync()
     {
-        _busy = true; InstallButton.IsEnabled = false; CloseButton.IsEnabled = false; Progress.Visibility = Visibility.Visible;
+        _busy = true; InstallButton.IsEnabled = false; ChooseButton.IsEnabled = false; CloseButton.IsEnabled = false; Progress.Visibility = Visibility.Visible;
         try
         {
+            if (_updateVersion is not null) await new ProcessActivity(new PlayPaths(RootPath.Text)).RequireIdleAsync("app-update", default);
             if (!WebViewAvailable())
             {
                 if (_test) throw new InvalidOperationException("WebView2 Runtimeがありません。");
@@ -93,11 +107,16 @@ public partial class MainWindow : Window
             }
             var payload = await PayloadAsync();
             IInstallationRegistration registration = _test ? new TestRegistration() : new WindowsRegistration();
-            _installed = await new InstallationEngine(registration).InstallAsync(payload, RootPath.Text, new Progress<string>(text => Status.Text = text));
+            _installed = await new InstallationEngine(registration).InstallAsync(payload, RootPath.Text, new Progress<string>(text => Status.Text = text), expectedVersion: _updateVersion);
             Status.Text = "インストールが完了しました";
             InstallButton.Visibility = Visibility.Collapsed; OpenButton.Visibility = Visibility.Visible;
             _busy = false; CloseButton.IsEnabled = true; Progress.Visibility = Visibility.Collapsed;
             await ReportAsync(true, new { _installed.Version, _installed.AppDirectory, _installed.DataRoot });
+            if (_updateVersion is not null)
+            {
+                File.Delete(AppUpdater.HandoffPath(new PlayPaths(_installed.DataRoot)));
+                if (!_test) { Process.Start(new ProcessStartInfo(Path.Combine(_installed.AppDirectory, "mcmere-play.exe")) { UseShellExecute = true }); Close(); }
+            }
             if (_test) { _busy = false; Application.Current.Shutdown(0); }
         }
         catch (Exception error)
@@ -106,7 +125,7 @@ public partial class MainWindow : Window
             await ReportAsync(false, new { error = error.Message });
             if (_test) { _busy = false; Application.Current.Shutdown(1); }
         }
-        finally { _busy = false; CloseButton.IsEnabled = true; Progress.Visibility = Visibility.Collapsed; }
+        finally { _busy = false; CloseButton.IsEnabled = true; ChooseButton.IsEnabled = _updateVersion is null; Progress.Visibility = Visibility.Collapsed; }
     }
     private static bool WebViewAvailable()
     {

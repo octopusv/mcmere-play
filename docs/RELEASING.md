@@ -1,6 +1,6 @@
 # SetupとReleaseの方針
 
-SetupとZIPはローカルで生成できる。CIのRelease workflow、署名済みアプリ更新情報、公開バイナリReleaseと実ゲームでの最終確認は準備中。
+SetupとZIP、署名済みアプリ更新情報はローカルで生成できる。CIのRelease workflow、公開バイナリReleaseと実ゲームでの最終確認は準備中。
 
 ## 独立したアプリとして配布する
 
@@ -57,6 +57,28 @@ mcmere Playはmcmere本体とは別のバージョン、Setup、GitHub Release�
 最初のバイナリReleaseには、通信断・容量不足・同時起動・更新中の強制終了・ホワイトリスト削除・既存設定保持の試験も必要。配布APIと公開パックの準備ができていることも確認する。
 
 将来のGitHub Actionsは、PR時にbuild/test、保護されたrelease操作でpackage/sign/uploadを実行する。バージョンとpayloadの不一致や、未検証バイナリの公開を防ぐ。
+
+## アプリ更新の署名
+
+Playは公開GitHub Releases APIから、このリポジトリの数値tagとapp-update.jsonを取得する。初期版はPrereleaseも対象とする。署名済み情報に記載されたバージョン、Windows x64、同じリポジトリ内のSetup URL、サイズ、SHA256を確認する。署名鍵はアプリに埋め込んだ公開鍵に固定し、MODパックの鍵と共有しない。転送先を制限し、ゲーム配布のsessionを送らない。確認済みの上位版を保存し、古い版への置き換えを拒否する。
+
+このリポジトリには公開鍵src/Mcmere.Play.Core/app-update-key.jsonだけを含める。秘密鍵はローカルのWindowsユーザーに対してDPAPIで保護する。別のWindowsユーザーやGitHub Actionsでは、その暗号化ファイルを直接利用できない。初期化スクリプトは既存鍵を上書きしない。フォークする場合は配布先定数・署名スクリプトのリポジトリURLを変更し、自分の公開鍵を組み込んでからアプリを配布する。
+
+```powershell
+.\scripts\Sign-AppUpdate.ps1 -Version 0.1.1 -SetupPath .\artifacts\mcmere-play-Setup-0.1.1.exe -PrivateKeyPath .\.local\release-key.protected -OutputPath .\artifacts\app-update.json -Prerelease
+```
+
+signは検証が終わったSetupに対して行い、同じGitHub Releaseへapp-update.jsonを添付する。これは更新情報の署名であり、EXEのAuthenticode署名ではない。公開前に、旧版Setup・新しいSetup・署名済み情報を使って次を実行する。
+
+```powershell
+.\scripts\Test-AppUpdate.ps1 -PreviousSetupPath .\artifacts\mcmere-play-Setup-0.1.0.exe -UpdateSetupPath .\artifacts\mcmere-play-Setup-0.1.1.exe -SignedManifestPath .\artifacts\app-update.json -DataDirectory .\.test-data\app-update
+```
+
+この検証はHTTP応答にローカルのfixtureを使うが、アプリに固定した公開鍵、実際の署名、Setupの取得・ハッシュ検証、親プロセス終了待ち、実Setupによる更新、更新後のネイティブ起動、設定とゲームデータ保持を確認する。実際のGitHubへの更新確認は--smoke-test --smoke-check-updateを使って独立した保存先で確認できる。PrismログインやMinecraft接続はこの検証に含まない。
+
+-NativeParentを追加すると、署名済みの更新準備後に旧版の実アプリを起動し、「再起動して更新」の画面操作、通常のWebView2 bridge、アプリの終了、実Setupへの引き継ぎを通して検証する。この場合は旧版にも更新機能とsmoke検証の実装が必要。Setupは検証用の登録を使い、通常のWindows登録を変更しない。
+
+技術参照: [GitHub Releases API](https://docs.github.com/en/rest/releases/releases#list-releases)、[WindowsでのSecureString保護](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/convertfrom-securestring)。
 
 ## リポジトリとReleaseに含めないもの
 
