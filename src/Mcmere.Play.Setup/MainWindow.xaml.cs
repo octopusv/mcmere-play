@@ -49,10 +49,10 @@ public partial class MainWindow : Window
             {
                 _busy = true; ChooseButton.IsEnabled = false; InstallButton.IsEnabled = false;
                 Status.Text = "アプリの終了を待っています";
-                var paths = new PlayPaths(RootPath.Text);
+                var paths = await PlayPaths.OpenAsync(RootPath.Text, requireIsolated: _test || _smoke);
                 var verified = await AppUpdateHandoffVerifier.VerifyAsync(request, paths, Environment.ProcessPath!);
                 _updateVersion = verified.Manifest.Version;
-                await PlayFiles.WriteAtomicAsync(PlayFiles.Child(paths.Root, "updates/handoff-status.json"), DistributionJson.Bytes(new { stage = "waiting-parent", version = _updateVersion }));
+                await PlayFiles.WriteAtomicAsync(PlayFiles.Child(paths.ControlRoot, "updates/handoff-status.json"), DistributionJson.Bytes(new { stage = "waiting-parent", version = _updateVersion }));
                 await AppUpdateHandoffVerifier.WaitForParentAsync(verified.Handoff);
                 await new ProcessActivity(paths).RequireIdleAsync("app-update", default);
                 await InstallAsync(); return;
@@ -98,7 +98,7 @@ public partial class MainWindow : Window
         _busy = true; InstallButton.IsEnabled = false; ChooseButton.IsEnabled = false; CloseButton.IsEnabled = false; Progress.Visibility = Visibility.Visible;
         try
         {
-            if (_updateVersion is not null) await new ProcessActivity(new PlayPaths(RootPath.Text)).RequireIdleAsync("app-update", default);
+            if (_updateVersion is not null) await new ProcessActivity(await PlayPaths.OpenAsync(RootPath.Text, requireIsolated: _test || _smoke)).RequireIdleAsync("app-update", default);
             if (!WebViewAvailable())
             {
                 if (_test) throw new InvalidOperationException("WebView2 Runtimeがありません。");

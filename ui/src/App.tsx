@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Check, ChevronDown, Coffee, Download, FolderOpen, History, LoaderCircle, Package, Play, Plus, Puzzle, RotateCw, Settings, UserRound, X } from "lucide-react";
 import { isNative, native, subscribe } from "./native";
-import { type View, type Discovery, type ServerView, type SavedServer, size, selection } from "./types";
+import { type View, type Discovery, type ServerView, type SavedServer, type MigrationPlan, size, selection } from "./types";
 
-function Dialog({ title, children, close }: { title: string; children: ReactNode; close: () => void }) {
+function Dialog({ title, children, close, busy = false }: { title: string; children: ReactNode; close: () => void; busy?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => { ref.current?.showModal(); return () => ref.current?.close(); }, []);
-  return <dialog className="play-dialog" ref={ref} aria-label={title} onCancel={close}><header><h2>{title}</h2><button className="icon-button" aria-label="閉じる" onClick={close}><X size={18} /></button></header>{children}</dialog>;
+  return <dialog className="play-dialog" ref={ref} aria-label={title} onCancel={event => { if (busy) event.preventDefault(); else close(); }}><header><h2>{title}</h2><button className="icon-button" aria-label="閉じる" disabled={busy} onClick={close}><X size={18} /></button></header>{children}</dialog>;
 }
 function ErrorText({ message }: { message: string | null | undefined }) { return message ? <div className="play-error" role="alert">{message}</div> : null; }
 
@@ -16,7 +16,8 @@ export default function App() {
   const [startupErrorCode, setStartupErrorCode] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState("overview");
-  const [dialog, setDialog] = useState<"add" | "name" | "quarantine" | "remove" | null>(null);
+  const [dialog, setDialog] = useState<"add" | "name" | "quarantine" | "remove" | "migrate" | null>(null);
+  const [migrationPlan, setMigrationPlan] = useState<MigrationPlan | null>(null);
   const [url, setUrl] = useState("");
   const [discovery, setDiscovery] = useState<Discovery | null>(null);
   const [playerName, setPlayerName] = useState("");
@@ -114,7 +115,9 @@ export default function App() {
         {startupErrorCode === "settings_corrupt" && <><p>前回の保存時点の設定に戻します。ゲームデータはそのまま残ります。</p><button className="primary" data-action="recover-settings" disabled={requesting} onClick={() => void act("recover-settings")}>保存済みの設定を復元</button></>}
       </> : <><LoaderCircle className="spin" /><p>読み込み中</p></>}</section> :
       applicationSettings ? <><h1>アプリ設定</h1><div className="play-settings">
-        <label>外観<select aria-label="外観" value={view.settings.theme} onChange={event => void act("theme", { theme: event.target.value })}><option value="system">システム設定</option><option value="light">ライト</option><option value="dark">ダーク</option></select></label>
+        <label>外観<select aria-label="外観" value={view.settings.theme} disabled={busy} onChange={event => void act("theme", { theme: event.target.value })}><option value="system">システム設定</option><option value="light">ライト</option><option value="dark">ダーク</option></select></label>
+        <div className="play-settings-row"><div><strong>データ保存先</strong><small data-role="data-root">{view.dataRoot}</small></div><button data-action="choose-migration" disabled={busy || view.update?.queued || ["checking", "downloading", "applying"].includes(view.update?.stage ?? "")} onClick={() => void act("choose-migration").then(value => { if (value) { setMigrationPlan(value as MigrationPlan); setDialog("migrate"); } })}>保存先を変更</button></div>
+        {view.migration && <div className="play-update" role="status"><strong>{view.migration.stage === "switching" ? "保存先を切り替えています" : "データをコピーして確認しています"}</strong><p>{view.migration.completedFiles} / {view.migration.totalFiles}ファイル · {size(view.migration.copiedBytes)} / {size(view.migration.totalBytes)}</p>{view.canCancel && <button onClick={() => void native("cancel")}>移行を中止</button>}</div>}
         <div className="play-settings-row"><div><strong>mcmere Play</strong><small>バージョン {view.version}</small></div><button data-action="check-update" disabled={requesting || view.update?.queued} onClick={() => void act("check-update")}>更新を確認</button></div>
         {view.update && <div className="play-update" data-stage={view.update.stage}>
           {view.update.stage === "current" && <p>利用できる更新はありません。</p>}
@@ -130,7 +133,7 @@ export default function App() {
         </div>}
         <div className="play-settings-row"><div><strong>オープンソース</strong><small>MIT License</small></div><button onClick={() => void act("open-source")}>GitHubを開く</button></div>
         <div className="play-settings-row"><div><strong>診断ログ</strong><small>自動送信は行いません</small></div><button disabled={busy} onClick={() => void act("diagnostics")}>保存する</button></div>
-      </div><ErrorText message={error} /></> :
+      </div><ErrorText message={error} />{notice && <div className="notice" role="status">{notice}</div>}</> :
       !server ? <section className="play-empty"><h1>最初のサーバーを追加</h1><p>管理者から届いた配布ページを登録して、プレイ環境を準備しましょう。</p>
         <button className="primary" onClick={() => { setDialog("add"); setError(null); }}><Plus size={16} />サーバーを追加</button></section> :
       <><header className="play-heading"><div><h1>{server.name}</h1><div className="subtitle"><span className={"dot " + (state?.status?.gameState === "online" ? "online" : "")} />
@@ -173,6 +176,14 @@ export default function App() {
         </div>}
       </>}
     </main>
+    {dialog === "migrate" && migrationPlan && <Dialog title="データ保存先を変更" busy={busy} close={() => setDialog(null)}><div className="play-dialog-body"><ErrorText message={error} />
+      <p>ゲーム・MOD・Java・設定をコピーし、検証が終わってから切り替えます。アプリ本体の場所は変わりません。</p>
+      <div className="play-migration-path"><strong>現在の保存先</strong><p>{migrationPlan.source}</p><strong>新しい保存先</strong><p>{migrationPlan.destination}</p></div>
+      <p>{migrationPlan.files}ファイル · {size(migrationPlan.bytes)}をコピー · 必要な空き容量 {size(migrationPlan.requiredFreeBytes)}</p>
+      <div className="notice"><p>元のデータは削除しません。</p><p>Prismの全体設定と認証情報は移行しません。移行後はPrismでゲーム用アカウントにログインしてください。</p></div>
+      {view?.migration && <p role="status">{view.migration.stage === "switching" ? "保存先を切り替えています" : "コピーと検証を進めています"} · {size(view.migration.copiedBytes)} / {size(view.migration.totalBytes)}</p>}
+    </div><footer>{busy ? view?.canCancel && <button onClick={() => void native("cancel")}>移行を中止</button> : <button onClick={() => setDialog(null)}>キャンセル</button>}
+      <button className="primary" data-action="confirm-migration" disabled={busy} onClick={() => void act("migrate-data", { planId: migrationPlan.id }).then(value => { if (value) { setDialog(null); setNotice("保存先を変更しました。Prismでゲーム用アカウントにログインしてください。"); } })}>移行して切り替える</button></footer></Dialog>}
     {dialog === "add" && <Dialog title="サーバーを追加" close={() => setDialog(null)}><div className="play-dialog-body"><ErrorText message={error} />
       <label>配布ページのURL<input autoFocus type="url" value={url} onChange={event => { setUrl(event.target.value); setDiscovery(null); }} placeholder="管理者から届いたURL" /></label>
       {discovery && <div className="notice"><strong>{discovery.info.name}</strong><p>{discovery.target.origin}</p></div>}</div><footer><button onClick={() => setDialog(null)}>キャンセル</button>

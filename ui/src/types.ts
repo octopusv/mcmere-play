@@ -11,7 +11,9 @@ export type ServerView = { id: string; stage: string; error: string | null; erro
   javaReady: boolean; prismReady: boolean; directory: string | null; received: number; total: number; currentFile: string | null };
 export type View = { settings: { theme: string; selectedServer: string | null; servers: SavedServer[] }; servers: ServerView[];
   busy: boolean; canCancel: boolean; version: string; update?: { stage: string; version: string | null; notes: string | null; length: number; received: number; queued: boolean; error: string | null };
+  dataRoot?: string; migration?: { stage: string; copiedBytes: number; totalBytes: number; completedFiles: number; totalFiles: number } | null;
   activity: { gameRunning: boolean; prismRunning: boolean; uncertain: boolean } };
+export type MigrationPlan = { id: string; source: string; destination: string; bytes: number; requiredFreeBytes: number; files: number; prismLoginRequired: boolean };
 export type Discovery = { target: { origin: string; publicId: string }; info: { name: string; signingKey: { keyId: string } } };
 export function size(bytes: number) { return bytes >= 1073741824 ? (bytes / 1073741824).toFixed(1) + " GiB" : bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + " MiB" : Math.ceil(bytes / 1024) + " KiB"; }
 export function choiceKey(file: PackFile) { return file.source.projectId ? "project:" + file.source.projectId : file.modIds.length ? "mods:" + [...file.modIds].sort().join(",") : "path:" + file.path; }

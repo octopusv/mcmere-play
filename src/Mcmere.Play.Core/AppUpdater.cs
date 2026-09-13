@@ -40,9 +40,9 @@ public sealed class AppUpdater : IDisposable
         _key = trustedKey ?? AppUpdateCatalog.TrustedKey; _version = currentVersion ?? PlayVersion.Current; _allowPrereleases = allowPrereleases;
         if (!AppUpdateCatalog.IsVersion(_version)) throw new ArgumentException("Invalid application version.");
     }
-    private string StateFile => PlayFiles.Child(_paths.Root, "updates/state.json");
-    public static string SetupPath(PlayPaths paths, AppUpdateManifest manifest) => PlayFiles.Child(paths.Root, "updates/setup-" + manifest.Version + "-" + manifest.Sha256 + ".exe");
-    public static string HandoffPath(PlayPaths paths) => PlayFiles.Child(paths.Root, "updates/handoff.json");
+    private string StateFile => PlayFiles.Child(_paths.ControlRoot, "updates/state.json");
+    public static string SetupPath(PlayPaths paths, AppUpdateManifest manifest) => PlayFiles.Child(paths.ControlRoot, "updates/setup-" + manifest.Version + "-" + manifest.Sha256 + ".exe");
+    public static string HandoffPath(PlayPaths paths) => PlayFiles.Child(paths.ControlRoot, "updates/handoff.json");
     private void Set(AppUpdateView value) { View = value; Changed?.Invoke(); }
     public Task InitializeAsync(CancellationToken ct = default) => RunAsync(async () =>
     {
@@ -98,7 +98,7 @@ public sealed class AppUpdater : IDisposable
         Set(View with { Stage = "downloading", Received = 0, Error = null });
         var downloader = new VerifiedDownloads(_http, new DownloadPolicy());
         var cache = await downloader.GetAsync(new("play-update", manifest.SetupUrl, manifest.Length, manifest.Sha256, "sha256"),
-            PlayFiles.Child(_paths.Root, "updates/cache"), progress: new Transfer(value => Set(View with { Received = value.Received })), ct: ct);
+            PlayFiles.Child(_paths.ControlRoot, "updates/cache"), progress: new Transfer(value => Set(View with { Received = value.Received })), ct: ct);
         var destination = SetupPath(_paths, manifest);
         var temp = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -130,7 +130,7 @@ public sealed class AppUpdater : IDisposable
             var handoff = new AppUpdateHandoff(_saved!.Envelope, _version, parentProcessId, parentStartedAt);
             await PlayFiles.WriteAtomicAsync(HandoffPath(_paths), DistributionJson.Bytes(handoff), ct);
             var start = new ProcessStartInfo(setup) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(setup)!, WindowStyle = ProcessWindowStyle.Normal };
-            foreach (var argument in new[] { "--update-request", HandoffPath(_paths), "--data-root", _paths.Root }) start.ArgumentList.Add(argument);
+            foreach (var argument in new[] { "--update-request", HandoffPath(_paths), "--data-root", _paths.ControlRoot }) start.ArgumentList.Add(argument);
             _launcher.Start(start); _started = true; Set(View with { Stage = "applying" }); return true;
         }
         catch (Exception error) { Set(View with { Queued = false, Error = Message(error) }); throw; }

@@ -6,7 +6,7 @@ using Mcmere.Play.Core;
 if (args.Length is not (4 or 5) || args.Length == 5 && args[4] != "--prepare-only") throw new ArgumentException("Usage: UpdateSmoke <data-root> <signed-manifest> <setup> <report> [--prepare-only]");
 var root = Path.GetFullPath(args[0]);
 if (!root.Contains(Path.DirectorySeparatorChar + ".test-data" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Use isolated .test-data.");
-var paths = new PlayPaths(root);
+var paths = await PlayPaths.OpenAsync(root, requireIsolated: true);
 var envelopeBytes = await File.ReadAllBytesAsync(args[1]);
 var envelope = DistributionJson.Read<SignedManifest>(envelopeBytes);
 var manifest = AppUpdateSigning.Verify(envelope, AppUpdateCatalog.TrustedKey);

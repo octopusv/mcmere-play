@@ -8,6 +8,32 @@ namespace Mcmere.Play.Core;
 public static class PrismProfile
 {
     public const string SupportedVersion = "11.1.0";
+    public static string Relocate(string configuration, string sourceRoot, string destinationRoot)
+    {
+        var lines = configuration.Split('\n');
+        var result = new List<string>();
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            var split = trimmed.IndexOf('=');
+            if (split > 0 && trimmed[..split] == "InstanceAccountId") continue;
+            if (split > 0 && trimmed[..split] == "JavaPath")
+            {
+                var raw = trimmed[(split + 1)..];
+                if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"') raw = raw[1..^1].Replace("\\\"", "\"", StringComparison.Ordinal).Replace("\\\\", "\\", StringComparison.Ordinal);
+                var old = raw.Replace('\\', '/');
+                var source = Path.GetFullPath(sourceRoot).Replace('\\', '/').TrimEnd('/') + "/";
+                if (old.StartsWith(source, StringComparison.OrdinalIgnoreCase))
+                {
+                    var relative = old[source.Length..];
+                    var target = PlayFiles.Child(destinationRoot, relative).Replace('\\', '/');
+                    result.Add("JavaPath=" + target + (line.EndsWith('\r') ? "\r" : "")); continue;
+                }
+            }
+            result.Add(line);
+        }
+        return string.Join('\n', result);
+    }
     public static IReadOnlyDictionary<string, byte[]> Prepare(PackManifest manifest, string javaPath, int maximumMemoryMiB,
         string? previousConfiguration = null, string? previousPack = null)
     {

@@ -23,7 +23,7 @@ const path = require('node:path');
       source: { kind: 'modrinth', projectId: id }, requirement: required ? 'required' : 'recommended', defaultEnabled: true, modIds: [id], requires: [] });
     const state = { version: '0.1.0', settings: { theme: 'light', selectedServer: 'fixture', servers: [{ id: 'fixture', name: 'Example server', playerName: null, memoryMiB: 4096, optionalChoices: {}, gameObserved: true, target: { origin: 'https://packs.example', publicId: '2'.repeat(32) } }] },
       servers: [{ id: 'fixture', stage: 'idle', error: null, errorCode: null, manifest: null, plan: null, status: null, javaReady: false, prismReady: false, total: 0, received: 0 }],
-      busy: false, canCancel: false, update: { stage: 'idle', version: null, notes: null, length: 0, received: 0, queued: false, error: null }, activity: { gameRunning: false, prismRunning: false, uncertain: false } };
+      busy: false, canCancel: false, dataRoot: 'C:\\Example\\mcmere-play', migration: null, update: { stage: 'idle', version: null, notes: null, length: 0, received: 0, queued: false, error: null }, activity: { gameRunning: false, prismRunning: false, uncertain: false } };
     const clone = value => JSON.parse(JSON.stringify(value));
     let settingsCorrupt = false;
     await page.exposeBinding('__playBridge', async (_source, request) => {
@@ -34,6 +34,8 @@ const path = require('node:path');
       if (request.op === 'check-update') Object.assign(state.update, { stage: 'available', version: '0.1.1', notes: 'アプリ更新の検証用表示', length: 120000000 });
       if (request.op === 'download-update') Object.assign(state.update, { stage: 'ready', received: state.update.length });
       if (request.op === 'queue-update') state.update.queued = request.body.queued;
+      if (request.op === 'choose-migration') return { id: request.id, ok: true, value: { id: 'migration-fixture', source: state.dataRoot, destination: 'D:\\Games\\mcmere-play-data', bytes: 10000000, requiredFreeBytes: 90000000, files: 100, prismLoginRequired: true } };
+      if (request.op === 'migrate-data') { state.dataRoot = 'D:\\Games\\mcmere-play-data'; return { id: request.id, ok: true, value: { moved: true } }; }
       if (request.op === 'state') return { id: request.id, ok: true, value: clone(state) };
       if (request.op === 'identify') {
         if (request.body.name !== 'PlayerName') return { id: request.id, ok: false, error: { code: 'name_not_listed', message: 'ホワイトリストで名前を確認できません。' } };
@@ -86,6 +88,14 @@ const path = require('node:path');
     await page.getByRole('button', { name: '更新予約を取り消す', exact: true }).click();
     await page.getByRole('button', { name: 'Prismとゲームの終了後に更新', exact: true }).waitFor();
     state.activity.prismRunning = false;
+    await page.getByRole('button', { name: '保存先を変更', exact: true }).click();
+    await page.getByRole('dialog', { name: 'データ保存先を変更', exact: true }).waitFor();
+    if (!(await page.getByRole('dialog').innerText()).includes('Prismの全体設定と認証情報は移行しません')) throw new Error('Migration did not explain Prism sign-in.');
+    if (await page.getByRole('dialog').evaluate(dialog => dialog.scrollWidth > dialog.clientWidth + 1)) throw new Error('Migration dialog has horizontal overflow.');
+    await page.screenshot({ path: path.join(out, 'migration-confirm.png'), fullPage: true });
+    await page.getByRole('button', { name: '移行して切り替える', exact: true }).click();
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => document.querySelector('[data-role="data-root"]')?.textContent === 'D:\\Games\\mcmere-play-data');
     await page.getByRole('button', { name: /Example server/ }).click();
     await page.getByRole('tab', { name: '概要', exact: true }).click();
     await page.setViewportSize({ width: 860, height: 760 });
@@ -98,7 +108,7 @@ const path = require('node:path');
     await page.getByRole('button', { name: '保存済みの設定を復元', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('.play-app')?.dataset.ready === 'true');
     if (errors.length) throw new Error(errors.join('\n'));
-    for (const op of ['identify', 'prepare', 'optional', 'memory', 'theme', 'recover-settings', 'check-update', 'download-update', 'queue-update']) if (!calls.includes(op)) throw new Error('Missing native operation: ' + op);
+    for (const op of ['identify', 'prepare', 'optional', 'memory', 'theme', 'recover-settings', 'check-update', 'download-update', 'queue-update', 'choose-migration', 'migrate-data']) if (!calls.includes(op)) throw new Error('Missing native operation: ' + op);
     fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ passed: true, transport: 'synthetic native bridge', calls, errors, realGameConnectionTested: false }, null, 2));
     console.log('Play UI checks passed.');
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

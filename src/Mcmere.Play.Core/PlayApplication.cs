@@ -8,7 +8,8 @@ namespace Mcmere.Play.Core;
 public sealed record ServerView(string Id, string Stage = "idle", string? Error = null, string? ErrorCode = null,
     PackManifest? Manifest = null, ReleaseStatus? Status = null, SyncPlan? Plan = null, bool JavaReady = false,
     bool PrismReady = false, string? Directory = null, long Received = 0, long Total = 0, string? CurrentFile = null);
-public sealed record PlayView(PlaySettings Settings, IReadOnlyList<ServerView> Servers, bool Busy, bool CanCancel, ActivityState Activity, string Version, AppUpdateView? Update = null);
+public sealed record PlayView(PlaySettings Settings, IReadOnlyList<ServerView> Servers, bool Busy, bool CanCancel, ActivityState Activity, string Version,
+    AppUpdateView? Update = null, string? DataRoot = null, MigrationProgress? Migration = null);
 public sealed record ServerDiscovery(DistributionTarget Target, ServerInfo Info);
 public interface IGameLauncher { void Start(ProcessStartInfo start); }
 public sealed class GameLauncher : IGameLauncher
@@ -70,7 +71,22 @@ public sealed class PlayApplication : IDisposable
         if (_wasGameRunning && !activity.GameRunning && _launchedServer is { } finished && Current(finished).Stage == "launching")
             Set(finished, Current(finished) with { Stage = "ready" });
         _wasGameRunning = activity.GameRunning;
-        return new(settings, settings.Servers!.Select(server => _views.GetValueOrDefault(server.Id) ?? new ServerView(server.Id)).ToArray(), _busy, _canCancel, activity, PlayVersion.Current);
+        return new(settings, settings.Servers!.Select(server => _views.GetValueOrDefault(server.Id) ?? new ServerView(server.Id)).ToArray(), _busy, _canCancel, activity, PlayVersion.Current, DataRoot: _paths.Root);
+    }
+    public Task<MigrationPlan> PlanMigrationAsync(string destination, CancellationToken ct = default) => Task.Run(() => new DataMigration(_paths, _activity).PlanAsync(destination, ct), ct);
+    public async Task<MigrationReceipt> MigrateDataAsync(MigrationPlan plan, IProgress<MigrationProgress>? progress = null, CancellationToken ct = default)
+    {
+        if (!await _operation.WaitAsync(0, ct)) throw new DistributionException("operation_busy", "別の処理が終わってから保存先を変更してください。");
+        using var source = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _active = source; _busy = true; _canCancel = true; Changed?.Invoke();
+        try
+        {
+            return await Task.Run(() => new DataMigration(_paths, _activity).MigrateAsync(plan, new CallbackProgress<MigrationProgress>(value =>
+            {
+                _canCancel = value.Stage != "switching"; progress?.Report(value); Changed?.Invoke();
+            }), source.Token), source.Token);
+        }
+        finally { _active = null; _busy = false; _canCancel = false; _operation.Release(); Changed?.Invoke(); }
     }
     public async Task<ServerDiscovery> DiscoverAsync(string url, CancellationToken ct = default)
     {

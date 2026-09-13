@@ -6,18 +6,29 @@ namespace Mcmere.Play.Core;
 public sealed class PlayPaths
 {
     public string Root { get; }
+    public string ControlRoot { get; }
     public string PrismData => PlayFiles.Child(Root, "prism-data");
     public string Cache => PlayFiles.Child(Root, "cache/sha512");
     public string Staging => PlayFiles.Child(Root, "staging");
     public string Backups => PlayFiles.Child(Root, "backups");
     public string State => PlayFiles.Child(Root, "state");
     public string Runtimes => PlayFiles.Child(Root, "runtimes");
-    public PlayPaths(string root)
+    public PlayPaths(string root, string? controlRoot = null)
     {
-        Root = Path.GetFullPath(root);
-        PlayFiles.NoLinksToRoot(Root);
+        Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        ControlRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(controlRoot ?? root));
+        PlayFiles.NoLinksToRoot(Root); PlayFiles.NoLinksToRoot(ControlRoot);
+        Directory.CreateDirectory(ControlRoot);
         Directory.CreateDirectory(Root);
         foreach (var directory in new[] { PrismData, Cache, Staging, Backups, State, Runtimes }) Directory.CreateDirectory(directory);
+    }
+    public static bool IsIsolated(string root) => Path.GetFullPath(root).Contains(Path.DirectorySeparatorChar + ".test-data" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    public static async Task<PlayPaths> OpenAsync(string controlRoot, CancellationToken ct = default, bool requireIsolated = false)
+    {
+        if (requireIsolated && !IsIsolated(controlRoot)) throw new ArgumentException("検証には独立した.test-data内の保存先を指定してください。");
+        var root = await DataLocation.ResolveAsync(controlRoot, ct);
+        if (requireIsolated && !IsIsolated(root)) throw new ArgumentException("検証のデータ保存先は.test-data内である必要があります。");
+        return new(root, controlRoot);
     }
     public string InstanceId(Uri origin, string serverId)
     {

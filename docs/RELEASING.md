@@ -58,6 +58,16 @@ mcmere Playはmcmere本体とは別のバージョン、Setup、GitHub Release�
 
 将来のGitHub Actionsは、PR時にbuild/test、保護されたrelease操作でpackage/sign/uploadを実行する。バージョンとpayloadの不一致や、未検証バイナリの公開を防ぐ。
 
+## 保存先変更の検証
+
+```powershell
+.\scripts\Test-DataMigration.ps1 -SetupPath .\artifacts\mcmere-play-Setup-0.1.0.exe -UpgradeSetupPath .\artifacts\mcmere-play-Setup-0.1.1.exe -DataDirectory .\.test-data\data-migration
+```
+
+このスクリプトは実際の確認画面とnative bridgeから移行を実行し、再起動後の保存先、元データ保持、Prism認証ファイルの非コピー、移行後のSetup更新とアンインストールを確認する。RuntimeFixtureRootに隔離したランタイム検証環境を指定すると、Javaのコピー後のハッシュと実行バージョンも確認する。SetupPathの代わりにApplicationPathへ開発ビルドを指定する場合、インストール・更新・削除の工程は対象外になる。アプリの自己更新まで組み合わせる場合はTest-AppUpdate.ps1に-NativeParent -RelocateBeforeUpdateを指定する。
+
+移行ではapp・updates・WebView2の領域と起動ロックを元の設置先に残す。コピー先と移行記録を照合してから参照を切り替え、コピー中の変更・破損・容量不足・ゲーム起動を検出した場合は切り替えを止める。Prism側のゲーム資材と認証ファイルの分離は、[Prism 11.1.0のデータ構成](https://github.com/PrismLauncher/PrismLauncher/blob/11.1.0/launcher/Application.cpp)を参照する。
+
 ## アプリ更新の署名
 
 Playは公開GitHub Releases APIから、このリポジトリの数値tagとapp-update.jsonを取得する。初期版はPrereleaseも対象とする。署名済み情報に記載されたバージョン、Windows x64、同じリポジトリ内のSetup URL、サイズ、SHA256を確認する。署名鍵はアプリに埋め込んだ公開鍵に固定し、MODパックの鍵と共有しない。転送先を制限し、ゲーム配布のsessionを送らない。確認済みの上位版を保存し、古い版への置き換えを拒否する。

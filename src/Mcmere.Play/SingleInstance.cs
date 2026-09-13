@@ -14,8 +14,8 @@ internal sealed class SingleInstance : IDisposable
     public bool Primary => _lock is not null;
     public SingleInstance(PlayPaths paths)
     {
-        _pipe = "mcmere-play-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(paths.Root.ToUpperInvariant())))[..24];
-        try { _lock = new FileStream(PlayFiles.Child(paths.Root, "application.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+        _pipe = "mcmere-play-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(paths.ControlRoot.ToUpperInvariant())))[..24];
+        try { _lock = new FileStream(PlayFiles.Child(paths.ControlRoot, "application.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
         catch (IOException) { }
     }
     public async Task SendAsync(string value)

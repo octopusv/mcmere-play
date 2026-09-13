@@ -22,11 +22,12 @@ public partial class App : Application
             if (checkUpdateSmoke && !smoke) throw new ArgumentException("更新確認の検証には--smoke-testが必要です。");
             var applyUpdateSmoke = e.Args.Contains("--smoke-apply-update");
             if (applyUpdateSmoke && (!smoke || Option("--output") is null)) throw new ArgumentException("更新適用の検証には--smoke-testと--outputが必要です。");
+            var migrateTo = Option("--smoke-migrate-to");
+            if (migrateTo is not null && (!smoke || !Path.IsPathFullyQualified(migrateTo) || !PlayPaths.IsIsolated(migrateTo)))
+                throw new ArgumentException("移行の検証には--smoke-testと.test-data内の移行先が必要です。");
             var installation = await InstallationEngine.ReadInstallationAsync(AppContext.BaseDirectory);
             var root = Option("--data-root") ?? installation?.DataRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "mcmere-play");
-            var paths = new PlayPaths(root);
-            if (smoke && !paths.Root.Contains(Path.DirectorySeparatorChar + ".test-data" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException("検証には独立した.test-data内の保存先を指定してください。");
+            var paths = await PlayPaths.OpenAsync(root, requireIsolated: smoke);
             if (protocol is not null) _ = DistributionTarget.Parse(protocol, development);
             _instance = new SingleInstance(paths);
             if (!_instance.Primary)
@@ -34,7 +35,7 @@ public partial class App : Application
                 await _instance.SendAsync(protocol ?? "activate");
                 Shutdown(0); return;
             }
-            var window = new MainWindow(paths, development, smoke, Option("--output"), protocol, recoverSettingsSmoke, checkUpdateSmoke, applyUpdateSmoke);
+            var window = new MainWindow(paths, development, smoke, Option("--output"), protocol, recoverSettingsSmoke, checkUpdateSmoke, applyUpdateSmoke, migrateTo);
             MainWindow = window;
             _instance.Receive(message => Dispatcher.InvokeAsync(() => window.ReceiveLink(message)));
             window.Show();
