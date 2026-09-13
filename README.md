@@ -4,7 +4,7 @@
 
 mcmere Playは、[mcmere](https://github.com/octopusv/mcmere)で管理するMinecraft Javaサーバー向けのWindowsクライアントです。サーバーが公開した構成にJava・NeoForge・MODを揃え、Prism Launcherからゲームを起動するアプリを開発します。
 
-> 現在は設計段階です。このリポジトリには設計と開発・配布方針を収録しています。実行可能なアプリ、Setup EXE、バイナリReleaseはまだありません。
+> 現在は開発中です。配布データの検証、ファイル取得、Prismプロファイル生成の基盤を実装しています。利用者向けアプリ、Setup EXE、バイナリReleaseはまだありません。
 
 ## 予定している使い方
 
@@ -34,6 +34,14 @@ PlayにGoogleログインやメール登録はありません。入力名のホ�
 - [第三者ライセンス](THIRD_PARTY_NOTICES.md)
 
 最初にPrismとNeoForgeの連携を独立した環境で検証し、同期エンジン、UI、Setupの順で実装します。動作確認の完了後にGitHub Releasesで配布します。
+
+実装済みの基盤を検証するには、Windows、.NET 8 SDK、PowerShell 7を用意して次を実行します。
+
+```powershell
+.\scripts\Build.ps1
+```
+
+現在のテストは署名・ファイルハッシュ、依存選択、保存先、取得の再開、転送時の認証情報、ZIP展開、Prism設定生成を対象としています。ゲームの起動・接続やインストーラー全体の検証は別工程です。
 
 ## ライセンス
 
