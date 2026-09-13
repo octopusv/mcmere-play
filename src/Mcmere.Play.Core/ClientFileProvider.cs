@@ -11,7 +11,8 @@ public sealed class ClientFileProvider(DistributionClient client, VerifiedDownlo
         using (await CacheAccess.AcquireAsync(cache, ct))
         {
             if (File.Exists(cache) && new FileInfo(cache).Length == file.Length && await PlayFiles.Sha512Async(cache, ct) == file.Sha512) return cache;
-            foreach (var folder in selectedFolders)
+            IEnumerable<string> folders = file.Path.StartsWith("mods/", StringComparison.OrdinalIgnoreCase) && file.Path.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) ? selectedFolders : [];
+            foreach (var folder in folders)
             {
                 var count = 0;
                 foreach (var candidate in PlayFiles.Files(folder))

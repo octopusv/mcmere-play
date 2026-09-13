@@ -81,6 +81,20 @@ public sealed class DownloadTests : IDisposable
         }
     }
     [Fact]
+    public async Task ModReuseDoesNotInspectJsonFilesInASelectedPrismFolder()
+    {
+        var paths = new PlayPaths(_root);
+        var selected = Path.Combine(_root, "selected-prism"); Directory.CreateDirectory(selected);
+        var account = Path.Combine(selected, "accounts.json"); await File.WriteAllBytesAsync(account, [1, 2, 3]);
+        await using var held = new FileStream(account, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        using var http = new HttpClient(new Handler(_ => throw new InvalidOperationException("No network expected.")));
+        var client = new DistributionClient(http, new("https://packs.example", new string('2', 32)));
+        var file = Fixture.File("config") with { Path = "config/example.json", Length = 3, Sha512 = Spec([1, 2, 3]).Hash,
+            Source = new() { Kind = FileSourceKind.Manual, PageUrl = "https://example.com/manual" } };
+        var provider = new ClientFileProvider(client, new VerifiedDownloads(http, new DownloadPolicy()), paths, [selected]);
+        Assert.Equal("manual_download", (await Assert.ThrowsAsync<DistributionException>(() => provider.GetAsync(file, default))).Code);
+    }
+    [Fact]
     public async Task CorruptBytesNeverBecomeACompletedCacheEntry()
     {
         using var http = new HttpClient(new Handler(_ => new(HttpStatusCode.OK) { Content = new ByteArrayContent([8, 8, 8]) }));
