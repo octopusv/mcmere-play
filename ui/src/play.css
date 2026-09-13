@@ -1,0 +1,26 @@
+.play-app{min-height:100dvh}.play-app .brand{white-space:nowrap;font-size:18px;gap:8px}.play-app .brand em{font-style:normal;font-weight:400;color:var(--secondary)}
+.play-main{min-width:0;padding:32px 34px 28px}.play-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:25px}
+.play-name{border:0;background:transparent;color:var(--secondary);font-size:12px}.play-app .tabs{margin-bottom:26px}
+.play-hero{background:var(--surface);padding:26px;border-radius:10px;margin:22px 0 25px}
+.play-hero h2{font-size:23px;line-height:1.4;letter-spacing:-.5px;margin-top:9px}.play-hero p{margin-top:10px;max-width:560px;font-size:13px;color:var(--secondary)}
+.play-hero .actions{margin-top:22px}.play-hero .primary{padding:11px 20px}
+.play-empty{max-width:550px;margin:100px auto;padding:24px}.play-empty p{margin:17px 0;color:var(--secondary);line-height:1.8}.play-empty .primary{margin-top:12px}
+.play-version{padding:16px 10px 0}.play-muted{color:var(--secondary);font-size:12px}
+.play-section-title{margin-bottom:8px}.play-environment{display:grid;grid-template-columns:26px 1fr auto auto;gap:12px;align-items:center;padding:17px 0;border-bottom:1px solid var(--line);font-size:13px}
+.play-environment strong{font-weight:400}.play-environment>span:last-child{min-width:122px;text-align:right;display:flex;justify-content:flex-end;align-items:center;gap:5px;font-size:12px}
+.play-ok{color:var(--green)}.play-footer-note{display:flex;align-items:center;gap:7px;margin-top:22px;color:var(--secondary);font-size:12px}
+.play-progress{margin-top:20px}.play-progress-track{height:5px;background:var(--line);border-radius:4px;overflow:hidden;margin-bottom:7px}.play-progress-track>div{height:100%;background:var(--button)}
+.play-settings{max-width:690px;margin-top:24px}.play-settings label{display:grid;gap:8px;margin:20px 0;font-size:13px}
+.play-settings select{max-width:240px}.play-settings-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 0;border-bottom:1px solid var(--line)}
+.play-settings-row>div{min-width:0}.play-settings-row small{display:block;margin-top:5px;overflow-wrap:anywhere}.play-settings-row button{flex-shrink:0}
+.play-history{display:flex;align-items:flex-start;gap:12px;padding:22px 0;border-bottom:1px solid var(--line)}.play-history p{font-size:13px;color:var(--secondary);margin-top:8px;white-space:pre-wrap}
+.play-section-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;margin:18px 0;flex-wrap:wrap}
+.play-app .item-main .actions{margin-top:10px}.play-check{display:flex;align-items:center;gap:7px;font-size:12px;white-space:nowrap}.play-check input{width:auto}
+.play-error{border-radius:8px;background:light-dark(#fff0ef,#392a2b);color:var(--red);padding:12px 14px;margin:15px 0;font-size:13px;overflow-wrap:anywhere}
+.play-dialog{width:min(590px,calc(100% - 40px));max-height:85dvh;overflow:auto;padding:0;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text);box-shadow:0 20px 80px var(--shadow)}
+.play-dialog::backdrop{background:#0006}.play-dialog>header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--line)}
+.play-dialog-body{padding:22px;display:grid;gap:16px}.play-dialog-body>p{color:var(--secondary);font-size:13px}.play-dialog-body label{display:grid;gap:8px;font-size:13px}
+.play-dialog-body input{width:100%}.play-dialog-body form{display:grid;gap:18px}.play-dialog-body ul{font-size:13px;padding-left:20px;overflow-wrap:anywhere}
+.play-dialog>footer{display:flex;justify-content:flex-end;gap:10px;padding:17px 22px;border-top:1px solid var(--line)}
+@media(max-width:960px){.play-main{padding:26px 25px}.play-environment{grid-template-columns:23px 1fr auto}.play-environment>span:nth-child(3){grid-column:2}.play-environment>span:last-child{grid-column:3}.play-heading{flex-wrap:wrap}.play-settings-row{flex-wrap:wrap}.play-app .brand{font-size:16px}.play-app .brand-icon{width:27px;height:27px}}
+@media(max-width:640px){.play-main{padding:22px 18px}.play-hero{padding:21px 18px}.play-environment>span:last-child{min-width:0}.play-section-heading{align-items:flex-start}.play-settings-row{gap:12px}}

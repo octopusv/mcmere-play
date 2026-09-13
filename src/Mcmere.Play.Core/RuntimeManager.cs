@@ -14,6 +14,25 @@ public sealed record JavaInspection(string Path, int Major, string Architecture,
 public sealed class RuntimeManager(PlayPaths paths, VerifiedDownloads downloads)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, byte> Probes = new();
+    public static bool IsProbe(int processId) => Probes.ContainsKey(processId);
+    public async Task<RuntimeInstallation?> FindAsync(RuntimeArtifact artifact, string category, CancellationToken ct = default)
+    {
+        ManifestValidation.RelativePath(artifact.Id);
+        if (artifact.Id.Contains('/') || category is not ("java" or "prism")) throw new DistributionException("invalid_runtime", "実行環境の識別情報が不正です。");
+        var relative = category + "/" + artifact.Id;
+        var pointer = PlayFiles.Child(paths.State, "runtime-" + artifact.Id + ".json");
+        if (File.Exists(pointer))
+        {
+            if (new FileInfo(pointer).Length > 4096) throw new DistributionException("invalid_runtime", "実行環境の記録が不正です。");
+            try { relative = DistributionJson.Read<string>(await File.ReadAllBytesAsync(pointer, ct)); }
+            catch (System.Text.Json.JsonException) { return null; }
+            if (!relative.StartsWith(category + "/" + artifact.Id, StringComparison.Ordinal) || relative.Count(c => c == '/') != 1)
+                throw new DistributionException("invalid_runtime", "実行環境の保存先が不正です。");
+        }
+        var directory = PlayFiles.Child(paths.Runtimes, relative);
+        return await ValidInstallationAsync(directory, artifact, ct) ? new(artifact.Id, artifact.Version, directory, PlayFiles.Child(directory, artifact.Executable)) : null;
+    }
     public Task<RuntimeInstallation> EnsureJavaAsync(JavaRequirement requirement, IProgress<TransferProgress>? progress = null, CancellationToken ct = default) =>
         EnsureAsync(RuntimeCatalog.Java(requirement), "java", progress, ct);
     public Task<RuntimeInstallation> EnsurePrismAsync(IProgress<TransferProgress>? progress = null, CancellationToken ct = default) =>
@@ -112,6 +131,7 @@ public sealed class RuntimeManager(PlayPaths paths, VerifiedDownloads downloads)
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
         using var process = new Process { StartInfo = start };
         if (!process.Start()) throw new DistributionException("probe_failed", "実行環境の確認を開始できません。");
+        Probes[process.Id] = 0;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
         var stdout = ReadBoundedAsync(process.StandardOutput, timeout.Token);
@@ -131,6 +151,7 @@ public sealed class RuntimeManager(PlayPaths paths, VerifiedDownloads downloads)
             try { await Task.WhenAll(stdout, stderr); } catch (Exception error) when (error is OperationCanceledException or IOException or DistributionException) { }
             throw;
         }
+        finally { Probes.TryRemove(process.Id, out _); }
     }
     private static async Task<string> ReadBoundedAsync(StreamReader reader, CancellationToken ct)
     {

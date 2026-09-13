@@ -4,7 +4,7 @@
 
 mcmere Playは、[mcmere](https://github.com/octopusv/mcmere)で管理するMinecraft Javaサーバー向けのWindowsクライアントです。サーバーが公開した構成にJava・NeoForge・MODを揃え、Prism Launcherからゲームを起動するアプリを開発します。
 
-> 現在は開発中です。配布API接続、署名とファイルの検証、差分同期・復旧、専用Java・Prismの導入を実装しています。利用者向けUI、Setup EXE、バイナリReleaseはまだありません。
+> 現在は開発中です。Windowsアプリ、参加者UI、配布API接続、差分同期・復旧、専用Java・Prismの導入を実装しています。Setupと配布用Releaseは準備中で、実際のゲーム接続を含む受け入れ確認はまだ完了していません。
 
 ## 予定している使い方
 
@@ -35,13 +35,13 @@ PlayにGoogleログインやメール登録はありません。入力名のホ�
 
 最初にPrismとNeoForgeの連携を独立した環境で検証し、同期エンジン、UI、Setupの順で実装します。動作確認の完了後にGitHub Releasesで配布します。
 
-実装済みの基盤を検証するには、Windows、.NET 8 SDK、PowerShell 7を用意して次を実行します。
+実装済みの機能を検証するには、Windows、.NET 8 SDK、Node.js、PowerShell 7、WebView2 Runtimeを用意して次を実行します。
 
 ```powershell
 .\scripts\Build.ps1
 ```
 
-現在のテストは署名・ファイルハッシュ、依存選択、保存先、取得の再開、転送時の認証情報、ZIP展開、ランタイム修復、Prism設定生成、配布APIクライアント、MOD同期・中断復旧・個人データ保持を対象としています。ゲームの起動・接続やインストーラー全体の検証は別工程です。
+現在のテストは署名・ファイルハッシュ、依存選択、保存先、取得の再開、転送時の認証情報、ZIP展開、ランタイム修復、Prism設定の保持、配布APIクライアント、MOD同期・中断復旧・個人データ保持を対象としています。UI検証にはscripts/browser-smoke.cjs、ネイティブ起動検証にはアプリの--smoke-testを使います。ゲームの起動・接続やインストーラー全体の検証は別工程です。
 
 ## ライセンス
 

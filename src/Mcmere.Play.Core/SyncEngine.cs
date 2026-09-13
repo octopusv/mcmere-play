@@ -64,6 +64,15 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
         return (await PlanCoreAsync(instanceId, manifest, javaPath, memoryMiB, optionalIds, quarantineUnknown, ct)).Plan;
     }
 
+    public async Task<SyncPlan> InspectAsync(string instanceId, PackManifest manifest, string javaPath, int memoryMiB,
+        ISet<string>? optionalIds = null, bool quarantineUnknown = false, CancellationToken ct = default)
+    {
+        await using var gate = Lock(instanceId);
+        if (File.Exists(PlayFiles.Child(StateRoot(instanceId), "journal.json")))
+            throw new DistributionException("recovery_required", "前回の更新を復旧してから確認してください。");
+        return (await PlanCoreAsync(instanceId, manifest, javaPath, memoryMiB, optionalIds, quarantineUnknown, ct)).Plan;
+    }
+
     private async Task<(SyncPlan Plan, IReadOnlyDictionary<string, byte[]> Profiles)> PlanCoreAsync(string instanceId, PackManifest manifest,
         string javaPath, int memoryMiB, ISet<string>? optionalIds, bool quarantineUnknown, CancellationToken ct)
     {
@@ -100,8 +109,12 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
             }
         }
         var cfgPath = PlayFiles.Child(paths.Instance(instanceId), "instance.cfg");
+        var packPath = PlayFiles.Child(paths.Instance(instanceId), "mmc-pack.json");
+        if (File.Exists(cfgPath) && new FileInfo(cfgPath).Length > 65536 || File.Exists(packPath) && new FileInfo(packPath).Length > 1024 * 1024)
+            throw new DistributionException("invalid_profile", "Prismの構成ファイルが大きすぎます。");
         var existing = File.Exists(cfgPath) ? await File.ReadAllTextAsync(cfgPath, ct) : null;
-        var profiles = PrismProfile.Prepare(manifest, javaPath, memoryMiB, existing);
+        var existingPack = File.Exists(packPath) ? await File.ReadAllTextAsync(packPath, ct) : null;
+        var profiles = PrismProfile.Prepare(manifest, javaPath, memoryMiB, existing, existingPack);
         foreach (var entry in profiles)
         {
             var before = await SnapshotAsync(PlayFiles.Child(paths.Instance(instanceId), entry.Key), ct);
