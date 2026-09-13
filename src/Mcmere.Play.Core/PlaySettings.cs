@@ -4,7 +4,7 @@ namespace Mcmere.Play.Core;
 
 public sealed record SavedServer(string Id, DistributionTarget Target, string Name, DistributionKey SigningKey,
     string? PlayerName = null, long HighestSequence = 0, int MemoryMiB = 4096,
-    IReadOnlyDictionary<string, bool>? OptionalChoices = null, bool GameObserved = false);
+    IReadOnlyDictionary<string, bool>? OptionalChoices = null, bool GameObserved = false, long KeyMinimumSequence = 0);
 public sealed record PlaySettings(int SchemaVersion = 1, string Theme = "system", string? SelectedServer = null,
     IReadOnlyList<SavedServer>? Servers = null);
 public sealed class PlaySettingsStore(PlayPaths paths, bool development = false)
@@ -81,7 +81,7 @@ public sealed class PlaySettingsStore(PlayPaths paths, bool development = false)
                 var recovery = current with { Servers = current.Servers!.Select(saved =>
                 {
                     var next = changed.Servers?.FirstOrDefault(server => server.Id == saved.Id);
-                    return next is null ? saved : saved with { HighestSequence = Math.Max(saved.HighestSequence, next.HighestSequence), SigningKey = next.SigningKey };
+                    return next is null ? saved : saved with { HighestSequence = Math.Max(saved.HighestSequence, next.HighestSequence), SigningKey = next.SigningKey, KeyMinimumSequence = Math.Max(saved.KeyMinimumSequence, next.KeyMinimumSequence) };
                 }).ToArray() };
                 await PlayFiles.WriteAtomicAsync(PlayFiles.Child(paths.Root, "settings.previous.json"), DistributionJson.Bytes(recovery), ct);
             }
@@ -102,7 +102,7 @@ public sealed class PlaySettingsStore(PlayPaths paths, bool development = false)
             var target = DistributionTarget.Parse(server.Target.Origin + "/s/" + server.Target.PublicId, development);
             if (target != server.Target || server.Id != paths.InstanceId(target.BaseUri, target.PublicId) || !ids.Add(server.Id) ||
                 server.Name is not { Length: >= 1 and <= 100 } || server.MemoryMiB is < 1024 or > 32768 || server.MemoryMiB % 64 != 0 || server.HighestSequence < 0 ||
-                server.OptionalChoices?.Count > 4096) throw new DistributionException("settings_corrupt", "サーバー設定が不正です。");
+                server.KeyMinimumSequence < 0 || server.OptionalChoices?.Count > 4096) throw new DistributionException("settings_corrupt", "サーバー設定が不正です。");
             ManifestValidation.Hash(server.SigningKey.KeyId, 64);
             try
             {

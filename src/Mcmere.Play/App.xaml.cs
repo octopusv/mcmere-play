@@ -25,6 +25,11 @@ public partial class App : Application
             var migrateTo = Option("--smoke-migrate-to");
             if (migrateTo is not null && (!smoke || !Path.IsPathFullyQualified(migrateTo) || !PlayPaths.IsIsolated(migrateTo)))
                 throw new ArgumentException("移行の検証には--smoke-testと.test-data内の移行先が必要です。");
+            var distributionUrl = Option("--smoke-distribution-url");
+            var expectedDistributionError = Option("--smoke-distribution-error");
+            if (distributionUrl is not null && (!smoke || !development || !Uri.TryCreate(distributionUrl, UriKind.Absolute, out var fixtureUri) ||
+                fixtureUri.Scheme != "http" || fixtureUri.Host != "127.0.0.1")) throw new ArgumentException("配布の検証には独立したloopbackの検証サーバーを指定してください。");
+            if (expectedDistributionError is not null && (distributionUrl is null || expectedDistributionError is not ("name_not_listed" or "signing_key_changed"))) throw new ArgumentException("配布検証のエラー指定が不正です。");
             var installation = await InstallationEngine.ReadInstallationAsync(AppContext.BaseDirectory);
             var root = Option("--data-root") ?? installation?.DataRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "mcmere-play");
             var paths = await PlayPaths.OpenAsync(root, requireIsolated: smoke);
@@ -35,7 +40,7 @@ public partial class App : Application
                 await _instance.SendAsync(protocol ?? "activate");
                 Shutdown(0); return;
             }
-            var window = new MainWindow(paths, development, smoke, Option("--output"), protocol, recoverSettingsSmoke, checkUpdateSmoke, applyUpdateSmoke, migrateTo);
+            var window = new MainWindow(paths, development, smoke, Option("--output"), protocol, recoverSettingsSmoke, checkUpdateSmoke, applyUpdateSmoke, migrateTo, distributionUrl, expectedDistributionError);
             MainWindow = window;
             _instance.Receive(message => Dispatcher.InvokeAsync(() => window.ReceiveLink(message)));
             window.Show();

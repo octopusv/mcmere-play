@@ -257,6 +257,12 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
     {
         var history = PlayFiles.Child(StateRoot(journal.InstanceId), "history/" + journal.Id + ".json");
         await PlayFiles.WriteAtomicAsync(history, DistributionJson.Bytes(new { journal.Id, applied.Manifest.ReleaseId, applied.AppliedAt, journal.Operations }), ct);
+        if (journal.Operations.Count == 0)
+        {
+            File.Delete(PlayFiles.Child(StateRoot(journal.InstanceId), "journal.json"));
+            DeleteTree(paths.Staging, journal.Id);
+            return;
+        }
         var backupRoot = PlayFiles.Child(paths.Backups, journal.InstanceId);
         var marker = PlayFiles.Child(backupRoot, journal.Id + "/complete.json");
         await PlayFiles.WriteAtomicAsync(marker, DistributionJson.Bytes(applied.AppliedAt), ct);

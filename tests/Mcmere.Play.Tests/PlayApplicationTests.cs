@@ -17,32 +17,35 @@ public sealed class PlayApplicationTests : IAsyncLifetime
     private PackManifest _manifest = null!;
     private string _url = "";
     private bool _allowed = true;
+    private RSA _key = null!;
+    private ServerInfo _info = null!;
+    private SignedManifest _envelope = null!;
     public async ValueTask InitializeAsync()
     {
-        using var key = RSA.Create(2048);
+        _key = RSA.Create(2048);
         _manifest = Fixture.Manifest() with { Java = new(21, "x64", RuntimeCatalog.Java21.Id) };
-        var envelope = ManifestSigning.Sign(_manifest, key);
-        var info = new ServerInfo(_manifest.ServerPublicId, "Fixture server", 1, ManifestSigning.PublicKey(key));
+        _envelope = ManifestSigning.Sign(_manifest, _key);
+        _info = new ServerInfo(_manifest.ServerPublicId, "Fixture server", 1, ManifestSigning.PublicKey(_key));
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
         _gateway = builder.Build();
-        _gateway.MapGet("/v1/servers/{id}/info", () => Results.Json(info, DistributionJson.Options));
+        _gateway.MapGet("/v1/servers/{id}/info", () => Results.Json(_info, DistributionJson.Options));
         _gateway.MapPost("/v1/servers/{id}/sessions", (NameRequest request) => _allowed && request.PlayerName.Equals("PlayerName", StringComparison.OrdinalIgnoreCase)
-            ? Results.Json(new DistributionSession("PlayerName", new string('a', 43), DateTimeOffset.UtcNow.AddMinutes(15), info), DistributionJson.Options)
+            ? Results.Json(new DistributionSession("PlayerName", new string('a', 43), DateTimeOffset.UtcNow.AddMinutes(15), _info), DistributionJson.Options)
             : Results.Json(new DistributionError("name_not_listed", "名前を確認してください。", false, "test"), statusCode: 403));
         _gateway.MapGet("/v1/servers/{id}/current", (HttpContext context) =>
             _allowed && context.Request.Headers.Authorization == "Bearer " + new string('a', 43)
             ? Results.Json(new ReleaseStatus(_manifest.ReleaseId, _manifest.Sequence, "available", "online", "matched", DateTimeOffset.UtcNow), DistributionJson.Options)
             : Results.Json(new DistributionError("name_not_listed", "名前を確認してください。", false, "test"), statusCode: 403));
-        _gateway.MapGet("/v1/servers/{id}/releases/{release}", () => Results.Json(envelope, DistributionJson.Options));
+        _gateway.MapGet("/v1/servers/{id}/releases/{release}", () => Results.Json(_envelope, DistributionJson.Options));
         await _gateway.StartAsync();
         _url = _gateway.Urls.Single() + "/s/" + _manifest.ServerPublicId;
         _play = new(new PlayPaths(_root), development: true, activity: new Activity());
     }
     public async ValueTask DisposeAsync()
     {
-        _play.Dispose(); await _gateway.StopAsync(); await _gateway.DisposeAsync();
+        _play.Dispose(); _key.Dispose(); await _gateway.StopAsync(); await _gateway.DisposeAsync();
         if (Directory.Exists(_root)) Directory.Delete(_root, true);
     }
     [Fact]
@@ -70,6 +73,23 @@ public sealed class PlayApplicationTests : IAsyncLifetime
         _allowed = false;
         Assert.Equal("name_not_listed", (await Assert.ThrowsAsync<DistributionException>(() => _play.InspectAsync(server.Id))).Code);
         Assert.Equal("error", (await _play.ViewAsync()).Servers.Single().Stage);
+    }
+    [Fact]
+    public async Task ATransitionSavedDuringRegistrationCannotBeRevertedByTheOldConnection()
+    {
+        var originalInfo = _info; var originalEnvelope = _envelope; var originalManifest = _manifest;
+        var discovery = await _play.DiscoverAsync(_url);
+        var saved = await _play.AddAsync(_url, discovery.Info.SigningKey.KeyId);
+        await _play.IdentifyAsync(saved.Id, "PlayerName");
+        using var next = RSA.Create(2048);
+        var nextKey = ManifestSigning.PublicKey(next);
+        _info = _info with { SigningKey = nextKey, KeyTransitions = [KeyRotation.Sign(_manifest.ServerPublicId, nextKey, 2, _key)] };
+        _manifest = _manifest with { Sequence = 2, ReleaseId = Guid.NewGuid().ToString("N") }; _envelope = ManifestSigning.Sign(_manifest, next);
+        await _play.AddAsync(_url, nextKey.KeyId);
+        _info = originalInfo; _manifest = originalManifest; _envelope = originalEnvelope;
+        await Assert.ThrowsAsync<DistributionException>(() => _play.InspectAsync(saved.Id));
+        var stored = (await _play.ViewAsync()).Settings.Servers!.Single();
+        Assert.Equal(nextKey, stored.SigningKey); Assert.Equal(2, stored.KeyMinimumSequence);
     }
     [Fact]
     public async Task RemovingRegistrationPreservesDedicatedGameData()

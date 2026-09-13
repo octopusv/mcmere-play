@@ -167,6 +167,17 @@ public sealed class SyncTests : IDisposable
     }
 
     [Fact]
+    public async Task SigningOnlyReleasesDoNotDisplaceGameFileBackups()
+    {
+        await Sync(Pack(1, await Mod("a", "old")));
+        var manifest = Pack(2, await Mod("a", "new")); await Sync(manifest);
+        var backups = Directory.GetDirectories(PlayFiles.Child(_paths.Backups, _instance)).Order().ToArray();
+        for (var sequence = 3; sequence <= 6; sequence++)
+            await Sync(manifest with { Sequence = sequence, ReleaseId = Guid.NewGuid().ToString("N") });
+        Assert.Equal(backups, Directory.GetDirectories(PlayFiles.Child(_paths.Backups, _instance)).Order().ToArray());
+        Assert.Equal("new", await File.ReadAllTextAsync(Game("mods/a.jar")));
+    }
+    [Fact]
     public async Task IfGameStartsDuringUpdateRecoveryWaitsUntilItStops()
     {
         var a = await Mod("a", "old"); await Sync(Pack(1, a));

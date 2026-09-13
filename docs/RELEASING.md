@@ -90,6 +90,10 @@ signは検証が終わったSetupに対して行い、同じGitHub Releaseへapp
 
 技術参照: [GitHub Releases API](https://docs.github.com/en/rest/releases/releases#list-releases)、[WindowsでのSecureString保護](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/convertfrom-securestring)。
 
+## サーバーとの統合検証
+
+mcmere側のscripts/Test-PlayDistribution.ps1に、このリポジトリでbuildしたアプリを渡す。mcmereの実際の公開処理と配布APIに対し、実参加者UIから登録・名前照合・取得・同期を実行し、鍵更新後の永続化とホワイトリスト削除時の拒否を確認する。両リポジトリはHTTP契約だけで接続し、ビルドを兄弟チェックアウトへ依存させない。合成JARと稼働状態を使用するため、この結果は実Minecraft接続の代わりにしない。
+
 ## リポジトリとReleaseに含めないもの
 
 プレイヤー情報、ホワイトリスト、サーバーIDと個別接続先、認証token、Prismアカウントファイル、署名秘密鍵、実運用の構成・ログ、ワールド、取得したMinecraft/MODのキャッシュはコミットしない。実運用に依存する値は設定として注入し、説明やテストには合成データを使う。

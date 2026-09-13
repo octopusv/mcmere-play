@@ -79,7 +79,7 @@ public sealed record PackManifest
 
 public sealed record SignedManifest(string KeyId, string Payload, string Sha256, string Signature);
 public sealed record DistributionKey(string KeyId, string PublicKey);
-public sealed record ServerInfo(string PublicId, string Name, int SchemaVersion, DistributionKey SigningKey);
+public sealed record ServerInfo(string PublicId, string Name, int SchemaVersion, DistributionKey SigningKey, IReadOnlyList<SignedKeyTransition>? KeyTransitions = null);
 public sealed record NameRequest(string PlayerName);
 public sealed record DistributionSession(string PlayerName, string SessionToken, DateTimeOffset ExpiresAt, ServerInfo Server);
 public sealed record ReleaseStatus(string ReleaseId, long Sequence, string DistributionState, string GameState,

@@ -196,6 +196,8 @@ manifestはUTF-8の生成済みbytesに対するRSA-PSS/SHA-256の分離署名�
 
 最初の配布ページはHTTPSを信頼の起点とし、配布元オリジンと公開鍵を保存する。未知の配布元を追加するときだけホスト名を表示する。HTTPS経由の初回取得以上の本人保証は主張しない。鍵の更新は旧鍵で署名された新鍵を受け入れ、旧鍵が失われた場合は配布元を再登録する。
 
+ServerInfoのkeyTransitionsは直近16世代までの移行証明を含む。証明はmcmere.pack-key-transitionという用途、schemaVersion、serverPublicId、previousKeyId、nextKey、minimumSequenceを旧鍵で署名する。保存済み鍵から現在の鍵へつながる証明だけを検証し、順序・用途・サーバー・署名・鍵の循環を確認する。新鍵と適用開始sequenceを設定の復旧用スナップショットにも保持し、古い接続で元の鍵へ戻さない。鍵更新は同じファイルの新releaseId/sequenceとして公開し、署名だけの適用ではゲームバックアップを減らさない。
+
 新しい有効版の選択はオンラインAPIで行い、署名だけでは古い版の起動を許可しない。sequence低下を検出する。以前の構成に戻す場合は同じファイルを参照する新sequenceの版を発行する。
 
 ## 8. サーバーから公開版を作る

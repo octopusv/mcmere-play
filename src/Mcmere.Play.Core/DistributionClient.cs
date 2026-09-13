@@ -31,11 +31,14 @@ public sealed record DistributionTarget(string Origin, string PublicId)
 
 public sealed record FetchedRelease(ReleaseStatus Status, SignedManifest Envelope, PackManifest Manifest);
 
-public sealed class DistributionClient(HttpClient http, DistributionTarget target, DistributionKey? trustedKey = null, TimeProvider? time = null)
+public sealed class DistributionClient(HttpClient http, DistributionTarget target, DistributionKey? trustedKey = null, TimeProvider? time = null, long keyMinimumSequence = 0)
 {
     private DistributionSession? _session;
     private string? _name;
     private DistributionKey? _trustedKey = trustedKey;
+    private long _keyMinimumSequence = keyMinimumSequence;
+    public DistributionKey? TrustedKey => _trustedKey;
+    public long KeyMinimumSequence => _keyMinimumSequence;
     private readonly TimeProvider _time = time ?? TimeProvider.System;
     private readonly SemaphoreSlim _sessionGate = new(1, 1);
     public DistributionTarget Target => target;
@@ -57,9 +60,16 @@ public sealed class DistributionClient(HttpClient http, DistributionTarget targe
         }
         catch (Exception error) when (error is FormatException or System.Security.Cryptography.CryptographicException or ArgumentException)
         { throw new DistributionException("invalid_key", "配布元の公開鍵を確認できません。"); }
-        if (_trustedKey is not null && _trustedKey != info.SigningKey)
-            throw new DistributionException("signing_key_changed", "配布元の公開鍵が変更されました。管理者に確認してください。");
+        AcceptKey(info);
         return info;
+    }
+    private void AcceptKey(ServerInfo info)
+    {
+        if (info.PublicId != target.PublicId || info.SchemaVersion != 1 || info.SigningKey is null) throw new DistributionException("invalid_server", "配布元の情報が一致しません。");
+        KeyRotation.ValidateKey(info.SigningKey);
+        if (_trustedKey is null) return;
+        var result = KeyRotation.Verify(_trustedKey, info.SigningKey, info.KeyTransitions, target.PublicId, _keyMinimumSequence);
+        _trustedKey = result.Key; _keyMinimumSequence = result.MinimumSequence;
     }
 
     public void Trust(DistributionKey key)
@@ -87,8 +97,8 @@ public sealed class DistributionClient(HttpClient http, DistributionTarget targe
                 session.ExpiresAt <= _time.GetUtcNow() || session.ExpiresAt > _time.GetUtcNow().AddMinutes(16) ||
                 session.SessionToken.Length is < 32 or > 256 || session.SessionToken.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('-' or '_')))
                 throw new DistributionException("invalid_session", "配布の利用確認を完了できません。");
-            if (_trustedKey is null || session.Server.SigningKey != _trustedKey)
-                throw new DistributionException("signing_key_changed", "配布元の公開鍵が一致しません。");
+            if (_trustedKey is null) throw new DistributionException("untrusted_server", "先に配布元を確認してください。");
+            AcceptKey(session.Server);
             _session = session;
             return session;
         }
@@ -101,7 +111,9 @@ public sealed class DistributionClient(HttpClient http, DistributionTarget targe
         var current = await AuthorizedAsync<ReleaseStatus>(HttpMethod.Get, "current", null, ct);
         ManifestValidation.Id(current.ReleaseId);
         var envelope = await AuthorizedAsync<SignedManifest>(HttpMethod.Get, "releases/" + current.ReleaseId, null, ct);
-        var manifest = ManifestSigning.Verify(envelope, _trustedKey, target.PublicId, minimumSequence);
+        if (envelope.KeyId != _trustedKey.KeyId) await DiscoverAsync(ct);
+        if (envelope.KeyId != _trustedKey.KeyId) throw new DistributionException("release_changed", "配布中に署名鍵が更新されました。もう一度確認してください。", true);
+        var manifest = ManifestSigning.Verify(envelope, _trustedKey, target.PublicId, Math.Max(minimumSequence, _keyMinimumSequence));
         if (manifest.ReleaseId != current.ReleaseId || manifest.Sequence != current.Sequence)
             throw new DistributionException("release_changed", "配布内容が更新されました。もう一度確認してください。", true);
         if (!Version.TryParse(manifest.MinimumPlayVersion, out var required) || required > Version.Parse(PlayVersion.Current))

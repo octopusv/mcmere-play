@@ -28,6 +28,8 @@ public partial class MainWindow : Window
     private readonly SmokeUpdateLauncher? _smokeUpdateLauncher;
     private readonly string? _output;
     private readonly string? _smokeMigrationTarget;
+    private readonly string? _smokeDistributionUrl;
+    private readonly string? _smokeDistributionError;
     private string? _pendingLink;
     private bool _ready;
     private bool _emitting;
@@ -38,7 +40,8 @@ public partial class MainWindow : Window
     private int _contextVersion;
     private ActivityState? _lastActivity;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(400) };
-    public MainWindow(PlayPaths paths, bool development, bool smoke, string? output, string? link, bool recoverSettingsSmoke = false, bool checkUpdateSmoke = false, bool applyUpdateSmoke = false, string? migrateTo = null)
+    public MainWindow(PlayPaths paths, bool development, bool smoke, string? output, string? link, bool recoverSettingsSmoke = false, bool checkUpdateSmoke = false, bool applyUpdateSmoke = false, string? migrateTo = null,
+        string? distributionUrl = null, string? expectedDistributionError = null)
     {
         InitializeComponent();
         _application = new(paths, development); _development = development; _smoke = smoke; _output = output; _pendingLink = link;
@@ -49,6 +52,7 @@ public partial class MainWindow : Window
         _recoverSettingsSmoke = recoverSettingsSmoke;
         _checkUpdateSmoke = checkUpdateSmoke;
         _smokeMigrationTarget = migrateTo;
+        _smokeDistributionUrl = distributionUrl; _smokeDistributionError = expectedDistributionError;
         _application.Changed += () => _dirty = true;
         _timer.Tick += async (_, _) => await EmitAsync();
         if (smoke) { ShowActivated = false; ShowInTaskbar = false; Left = -15000; Top = -15000; WindowStartupLocation = WindowStartupLocation.Manual; }
@@ -257,6 +261,11 @@ public partial class MainWindow : Window
         try
         {
             await Task.Delay(1200, _lifetime.Token);
+            if (_smokeDistributionUrl is not null)
+            {
+                await FinishSmokeAsync(true, await SmokeDistributionAsync(_smokeDistributionUrl, _smokeDistributionError));
+                return;
+            }
             var migratedJavaVerified = false;
             if (_smokeMigrationTarget is not null)
             {

@@ -32,7 +32,7 @@ public sealed class PlayApplication : IDisposable
         {
             _api.DefaultRequestHeaders.UserAgent.ParseAdd("mcmere-play/0.1.0");
             _files.DefaultRequestHeaders.UserAgent.ParseAdd("mcmere-play/0.1.0");
-            Client = new(_api, server.Target, server.SigningKey);
+            Client = new(_api, server.Target, server.SigningKey, keyMinimumSequence: server.KeyMinimumSequence);
             Downloads = new(_files, new DownloadPolicy(server.Target.BaseUri, development));
         }
         public void Dispose() { _api.Dispose(); _files.Dispose(); }
@@ -104,8 +104,9 @@ public sealed class PlayApplication : IDisposable
         var settings = await _settings.UpdateAsync(current =>
         {
             var existing = current.Servers!.FirstOrDefault(server => server.Id == id);
-            if (existing is not null && existing.SigningKey != saved.SigningKey) throw new DistributionException("signing_key_changed", "保存済みの公開鍵が一致しません。");
-            return current with { Servers = existing is null ? current.Servers!.Append(saved).ToArray() : current.Servers, SelectedServer = id };
+            if (existing is null) return current with { Servers = current.Servers!.Append(saved).ToArray(), SelectedServer = id };
+            var trust = KeyRotation.Verify(existing.SigningKey, saved.SigningKey, discovery.Info.KeyTransitions, discovery.Target.PublicId, existing.KeyMinimumSequence);
+            return current with { Servers = current.Servers!.Select(item => item.Id == id ? item with { SigningKey = trust.Key, KeyMinimumSequence = trust.MinimumSequence } : item).ToArray(), SelectedServer = id };
         }, ct);
         Changed?.Invoke();
         return settings.Servers!.Single(server => server.Id == id);
@@ -287,7 +288,7 @@ public sealed class PlayApplication : IDisposable
         var connection = Connect(server);
         if (connection.Client.PlayerName != server.PlayerName) await connection.Client.IdentifyAsync(server.PlayerName, ct);
         var fetched = await connection.Client.FetchAsync(Math.Max(server.HighestSequence, 1), ct);
-        await UpdateServerAsync(id, value => value with { HighestSequence = Math.Max(value.HighestSequence, fetched.Manifest.Sequence), Name = fetched.Manifest.ServerName }, ct);
+        await SaveTrustAsync(id, connection.Client, fetched.Manifest.Sequence, fetched.Manifest.ServerName, ct);
         Set(id, Current(id) with { Manifest = fetched.Manifest, Status = fetched.Status });
         return fetched;
     }
@@ -297,6 +298,7 @@ public sealed class PlayApplication : IDisposable
         var connection = Connect(server);
         var before = Current(id).Manifest!;
         var current = await connection.Client.FetchAsync(Math.Max(server.HighestSequence, 1), ct);
+        await SaveTrustAsync(id, connection.Client, current.Manifest.Sequence, current.Manifest.ServerName, ct);
         if (current.Manifest.ReleaseId != before.ReleaseId) throw new DistributionException("release_changed", "配布内容が更新されました。もう一度準備してください。", true);
         var allowed = await connection.Client.CheckLaunchAsync(before.ReleaseId, ct);
         if (!allowed.Allowed) throw new DistributionException(allowed.Reason ?? "launch_not_ready",
@@ -315,7 +317,23 @@ public sealed class PlayApplication : IDisposable
         var id = _connections.First(pair => ReferenceEquals(pair.Value, connection)).Key;
         return Transfer(id);
     }
-    private Connection Connect(SavedServer server) => _connections.GetOrAdd(server.Id, _ => new Connection(server, _development));
+    private Connection Connect(SavedServer server)
+    {
+        if (_connections.TryGetValue(server.Id, out var existing))
+        {
+            if (existing.Client.TrustedKey == server.SigningKey && existing.Client.KeyMinimumSequence >= server.KeyMinimumSequence) return existing;
+            if (_connections.TryRemove(server.Id, out var removed)) removed.Dispose();
+        }
+        return _connections.GetOrAdd(server.Id, _ => new Connection(server, _development));
+    }
+    private Task<PlaySettings> SaveTrustAsync(string id, DistributionClient client, long sequence, string name, CancellationToken ct) =>
+        UpdateServerAsync(id, value =>
+        {
+            if (value.SigningKey != client.TrustedKey && client.KeyMinimumSequence <= value.KeyMinimumSequence)
+                throw new DistributionException("signing_key_changed", "確認中に署名鍵が更新されました。もう一度確認してください。");
+            return value with { HighestSequence = Math.Max(value.HighestSequence, sequence), Name = name, SigningKey = client.TrustedKey!,
+                KeyMinimumSequence = Math.Max(value.KeyMinimumSequence, client.KeyMinimumSequence) };
+        }, ct);
     private ServerView Current(string id) => _views.GetValueOrDefault(id) ?? new(id);
     private void Set(string id, ServerView value) { _views[id] = value; Changed?.Invoke(); }
     private async Task<SavedServer> RequireServerAsync(string id, CancellationToken ct) => (await _settings.ReadAsync(ct)).Servers!.FirstOrDefault(server => server.Id == id)
