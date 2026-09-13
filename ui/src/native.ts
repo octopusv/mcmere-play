@@ -1,4 +1,4 @@
-type Message = { id?: string; ok?: boolean; value?: unknown; error?: { code: string; message: string }; type?: string; url?: string; message?: string };
+type Message = { id?: string; ok?: boolean; value?: unknown; error?: { code: string; message: string }; type?: string; url?: string; message?: string; code?: string };
 type WebView = { postMessage(value: unknown): void; addEventListener(type: "message", callback: (event: { data: Message }) => void): void };
 const host = (window as unknown as { chrome?: { webview?: WebView } }).chrome?.webview;
 const pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();

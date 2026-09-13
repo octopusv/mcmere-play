@@ -26,6 +26,61 @@ public sealed class DownloadTests : IDisposable
         Assert.Equal(first, second); Assert.Equal(1, calls); Assert.Equal(bytes, await File.ReadAllBytesAsync(first));
     }
     [Fact]
+    public async Task IndependentClientsShareOneVerifiedCacheWriterAndCancelledWaitersDoNotBlockIt()
+    {
+        var bytes = new byte[] { 2, 4, 6, 8 };
+        var handler = new PausedHandler(bytes);
+        using var http = new HttpClient(handler);
+        var spec = Spec(bytes);
+        var first = new VerifiedDownloads(http, new DownloadPolicy()).GetAsync(spec, _root);
+        await handler.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        using var cancel = new CancellationTokenSource();
+        var cancelled = new VerifiedDownloads(http, new DownloadPolicy()).GetAsync(spec, _root, ct: cancel.Token);
+        cancel.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        var second = new VerifiedDownloads(http, new DownloadPolicy()).GetAsync(spec with { Id = "second" }, _root);
+        handler.Resume.SetResult();
+        var paths = await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(paths[0], paths[1]);
+        Assert.Equal(1, handler.Calls);
+        Assert.Equal(bytes, await File.ReadAllBytesAsync(paths[0]));
+    }
+    [Fact]
+    public async Task LocalReuseAndADownloadCannotReplaceTheSameContentConcurrently()
+    {
+        var bytes = new byte[] { 2, 4, 6, 8 };
+        var paths = new PlayPaths(_root);
+        var reuse = Path.Combine(_root, "selected-mods");
+        Directory.CreateDirectory(reuse);
+        await File.WriteAllBytesAsync(Path.Combine(reuse, "test.jar"), bytes);
+        var spec = Spec(bytes);
+        var handler = new PausedHandler(bytes);
+        using var http = new HttpClient(handler);
+        var downloads = new VerifiedDownloads(http, new DownloadPolicy());
+        var first = downloads.GetAsync(spec, paths.Cache);
+        await handler.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var client = new DistributionClient(http, new("https://packs.example", new string('2', 32)));
+        var file = Fixture.File("test") with { Length = bytes.Length, Sha512 = spec.Hash };
+        var reuseTask = new ClientFileProvider(client, downloads, paths, [reuse]).GetAsync(file, default);
+        handler.Resume.SetResult();
+        var completed = await Task.WhenAll(first, reuseTask).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(completed[0], completed[1]);
+        Assert.Equal(1, handler.Calls);
+        Assert.Single(Directory.GetFiles(paths.Cache));
+    }
+    private sealed class PausedHandler(byte[] bytes) : HttpMessageHandler
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Calls;
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Interlocked.Increment(ref Calls); Entered.TrySetResult();
+            await Resume.Task.WaitAsync(ct);
+            return new(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };
+        }
+    }
+    [Fact]
     public async Task CorruptBytesNeverBecomeACompletedCacheEntry()
     {
         using var http = new HttpClient(new Handler(_ => new(HttpStatusCode.OK) { Content = new ByteArrayContent([8, 8, 8]) }));

@@ -16,6 +16,8 @@ public partial class App : Application
             if (protocol is not null && e.Args.Length != 1) throw new ArgumentException("アプリで開くURLに追加の引数は指定できません。");
             var development = e.Args.Contains("--development");
             var smoke = e.Args.Contains("--smoke-test");
+            var recoverSettingsSmoke = e.Args.Contains("--smoke-recover-settings");
+            if (recoverSettingsSmoke && !smoke) throw new ArgumentException("設定復元の検証には--smoke-testが必要です。");
             var installation = await InstallationEngine.ReadInstallationAsync(AppContext.BaseDirectory);
             var root = Option("--data-root") ?? installation?.DataRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "mcmere-play");
             var paths = new PlayPaths(root);
@@ -28,7 +30,7 @@ public partial class App : Application
                 await _instance.SendAsync(protocol ?? "activate");
                 Shutdown(0); return;
             }
-            var window = new MainWindow(paths, development, smoke, Option("--output"), protocol);
+            var window = new MainWindow(paths, development, smoke, Option("--output"), protocol, recoverSettingsSmoke);
             MainWindow = window;
             _instance.Receive(message => Dispatcher.InvokeAsync(() => window.ReceiveLink(message)));
             window.Show();

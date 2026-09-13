@@ -40,6 +40,12 @@ mcmere Playはmcmere本体とは別のバージョン、Setup、GitHub Release�
 
 現行のPublish.ps1が生成するSetupはコード署名されていない。SHA256SUMSとpayload検証はファイル整合性の確認であり、配布者のコード署名の代わりではない。
 
+設定復旧のネイティブ検証には以下を使う。起動画面の復元ボタンから通常のWebView2 bridgeを通して操作し、以前の設定と元の破損ファイル、ゲームデータが保持されたことを検証する。DLLを指定する場合は.NET Runtimeを使用する。自己完結した配布EXEもApplicationPathに指定できる。
+
+```powershell
+.\scripts\Test-SettingsRecovery.ps1 -ApplicationPath .\src\Mcmere.Play\bin\Release\net8.0-windows\mcmere-play.dll -DataDirectory .\.test-data\settings-recovery
+```
+
 1. リリースするcommitとバージョンを確定する。
 2. UI、.NET、同期エンジン、Prism連携、インストーラーの検証を実行する。
 3. 配布する同一payloadからEXEとZIPを生成し、ハッシュと署名を確認する。

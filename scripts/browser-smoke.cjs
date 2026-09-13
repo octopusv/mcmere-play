@@ -25,9 +25,12 @@ const path = require('node:path');
       servers: [{ id: 'fixture', stage: 'idle', error: null, errorCode: null, manifest: null, plan: null, status: null, javaReady: false, prismReady: false, total: 0, received: 0 }],
       busy: false, canCancel: false, activity: { gameRunning: false, prismRunning: false, uncertain: false } };
     const clone = value => JSON.parse(JSON.stringify(value));
+    let settingsCorrupt = false;
     await page.exposeBinding('__playBridge', async (_source, request) => {
       calls.push(request.op);
       const row = state.servers[0];
+      if (request.op === 'state' && settingsCorrupt) return { id: request.id, ok: false, error: { code: 'settings_corrupt', message: 'アプリ設定を読み取れません。' } };
+      if (request.op === 'recover-settings') settingsCorrupt = false;
       if (request.op === 'state') return { id: request.id, ok: true, value: clone(state) };
       if (request.op === 'identify') {
         if (request.body.name !== 'PlayerName') return { id: request.id, ok: false, error: { code: 'name_not_listed', message: 'ホワイトリストで名前を確認できません。' } };
@@ -76,8 +79,14 @@ const path = require('node:path');
     await page.setViewportSize({ width: 860, height: 760 });
     await page.screenshot({ path: path.join(out, 'ready-dark.png'), fullPage: true });
     if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error('Horizontal overflow.');
+    settingsCorrupt = true;
+    await page.reload();
+    await page.getByRole('button', { name: '保存済みの設定を復元', exact: true }).waitFor();
+    await page.screenshot({ path: path.join(out, 'settings-recovery.png'), fullPage: true });
+    await page.getByRole('button', { name: '保存済みの設定を復元', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('.play-app')?.dataset.ready === 'true');
     if (errors.length) throw new Error(errors.join('\n'));
-    for (const op of ['identify', 'prepare', 'optional', 'memory', 'theme']) if (!calls.includes(op)) throw new Error('Missing native operation: ' + op);
+    for (const op of ['identify', 'prepare', 'optional', 'memory', 'theme', 'recover-settings']) if (!calls.includes(op)) throw new Error('Missing native operation: ' + op);
     fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ passed: true, transport: 'synthetic native bridge', calls, errors, realGameConnectionTested: false }, null, 2));
     console.log('Play UI checks passed.');
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

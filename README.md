@@ -43,6 +43,8 @@ PlayにGoogleログインやメール登録はありません。入力名のホ�
 
 現在のテストは署名・ファイルハッシュ、依存選択、保存先、取得の再開、転送時の認証情報、ZIP展開、ランタイム修復、Prism設定の保持、配布APIクライアント、MOD同期・中断復旧・個人データ保持、Setupの更新・復旧・Windows登録を対象としています。UI検証にはscripts/browser-smoke.cjs、ネイティブ起動検証にはアプリの--smoke-testを使います。配布物の生成と受け入れスクリプトは[SetupとReleaseの方針](docs/RELEASING.md)を参照してください。ゲームの起動・接続は別途確認が必要です。
 
+設定ファイルが壊れた場合は、起動画面の「保存済みの設定を復元」から前回の設定を戻せます。確認済みの配布版番号と公開鍵を保持し、壊れた元の設定は退避します。復元用ファイルも壊れている場合や、新しいアプリだけが読める設定の場合は上書きしません。実際の画面からの復元はscripts/Test-SettingsRecovery.ps1で検証できます。
+
 ## ライセンス
 
 mcmere Playの独自コードとドキュメントは[MIT License](LICENSE)です。Prism Launcher、Java、Minecraft、NeoForge、MODなどには、それぞれのライセンスと配布条件が適用されます。

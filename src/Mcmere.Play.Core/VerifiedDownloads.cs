@@ -28,7 +28,6 @@ public sealed class DownloadPolicy(Uri? gateway = null, bool development = false
 
 public sealed class VerifiedDownloads(HttpClient http, DownloadPolicy policy)
 {
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _locks = new(StringComparer.OrdinalIgnoreCase);
     public static HttpClient CreateHttpClient() => new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromMinutes(30) };
 
     public async Task<string> GetAsync(DownloadSpec spec, string cacheRoot, string? sessionToken = null,
@@ -42,9 +41,7 @@ public sealed class VerifiedDownloads(HttpClient http, DownloadPolicy policy)
         policy.Validate(initial);
         Directory.CreateDirectory(cacheRoot);
         var destination = PlayFiles.Child(cacheRoot, spec.Algorithm + "-" + spec.Hash);
-        var gate = _locks.GetOrAdd(destination, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(ct);
-        try
+        using (await CacheAccess.AcquireAsync(destination, ct))
         {
             if (File.Exists(destination))
             {
@@ -118,7 +115,6 @@ public sealed class VerifiedDownloads(HttpClient http, DownloadPolicy policy)
             File.Delete(checkpoint);
             return destination;
         }
-        finally { gate.Release(); }
     }
 
     private async Task<HttpResponseMessage> OpenAsync(Uri initial, long offset, string? etag, string? token, CancellationToken ct)

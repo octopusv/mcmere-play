@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private readonly bool _development;
     private readonly bool _smoke;
+    private readonly bool _recoverSettingsSmoke;
     private readonly string? _output;
     private string? _pendingLink;
     private bool _ready;
@@ -28,10 +29,11 @@ public partial class MainWindow : Window
     private bool _dirty = true;
     private ActivityState? _lastActivity;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(400) };
-    public MainWindow(PlayPaths paths, bool development, bool smoke, string? output, string? link)
+    public MainWindow(PlayPaths paths, bool development, bool smoke, string? output, string? link, bool recoverSettingsSmoke = false)
     {
         InitializeComponent();
         _application = new(paths, development); _development = development; _smoke = smoke; _output = output; _pendingLink = link;
+        _recoverSettingsSmoke = recoverSettingsSmoke;
         _application.Changed += () => _dirty = true;
         _timer.Tick += async (_, _) => await EmitAsync();
         if (smoke) { ShowActivated = false; ShowInTaskbar = false; Left = -15000; Top = -15000; WindowStartupLocation = WindowStartupLocation.Manual; }
@@ -92,7 +94,7 @@ public partial class MainWindow : Window
             }
         }
         catch (OperationCanceledException) { }
-        catch (Exception error) { Post(new { type = "error", message = error.Message }); }
+        catch (Exception error) { Post(new { type = "error", message = error.Message, code = (error as DistributionException)?.Code }); }
         finally { _emitting = false; }
     }
     private async void OnMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -113,6 +115,7 @@ public partial class MainWindow : Window
             switch (op)
             {
                 case "state": result = await _application.ViewAsync(_lifetime.Token); break;
+                case "recover-settings": await _application.RestoreSettingsAsync(_lifetime.Token); break;
                 case "discover": result = await _application.DiscoverAsync(Text("url"), _lifetime.Token); break;
                 case "add": result = await _application.AddAsync(Text("url"), Text("keyId"), _lifetime.Token); break;
                 case "select": await _application.SelectAsync(Text("serverId"), _lifetime.Token); break;
@@ -194,12 +197,22 @@ public partial class MainWindow : Window
         try
         {
             await Task.Delay(1200, _lifetime.Token);
+            if (_recoverSettingsSmoke)
+            {
+                var clicked = await Browser.CoreWebView2.ExecuteScriptAsync("(() => { const button = document.querySelector('[data-action=\"recover-settings\"]'); if (!button || button.disabled) return false; button.click(); return true; })()");
+                if (clicked != "true") throw new InvalidOperationException("設定復元の操作が表示されませんでした。");
+                for (var attempt = 0; attempt < 50; attempt++)
+                {
+                    if (await Browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('.play-app')?.dataset.ready === 'true'") == "true") break;
+                    await Task.Delay(100, _lifetime.Token);
+                }
+            }
             var encoded = await Browser.CoreWebView2.ExecuteScriptAsync("JSON.stringify({hasApp:!!document.querySelector('.play-app'),ready:document.querySelector('.play-app')?.dataset.ready==='true',hasNative:!!window.chrome?.webview,hasError:!!document.querySelector('[role=alert]'),text:document.body.innerText.slice(0,1200)})");
             var json = JsonSerializer.Deserialize<string>(encoded) ?? "{}";
             using var result = JsonDocument.Parse(json);
             var state = await _application.ViewAsync(_lifetime.Token);
             await FinishSmokeAsync(result.RootElement.GetProperty("ready").GetBoolean() && !result.RootElement.GetProperty("hasError").GetBoolean() && !state.Activity.Uncertain,
-                new { ui = result.RootElement.Clone(), activity = state.Activity });
+                new { ui = result.RootElement.Clone(), activity = state.Activity, settingsRecoveryTested = _recoverSettingsSmoke });
         }
         catch (Exception error) { await FinishSmokeAsync(false, new { error = error.Message }); }
     }

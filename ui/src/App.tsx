@@ -13,6 +13,7 @@ function ErrorText({ message }: { message: string | null | undefined }) { return
 export default function App() {
   const [view, setView] = useState<View | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [startupErrorCode, setStartupErrorCode] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState("overview");
   const [dialog, setDialog] = useState<"add" | "name" | "quarantine" | "remove" | null>(null);
@@ -29,10 +30,10 @@ export default function App() {
   const selected = server && state?.manifest ? selection(state.manifest.files, server) : new Set<string>();
   useEffect(() => {
     const update = (value: View) => { setView(value); document.documentElement.dataset.theme = value.settings.theme; };
-    void native<View>("state").then(update).catch(reason => setError(reason.message));
+    void native<View>("state").then(update).catch(reason => { setError(reason.message); setStartupErrorCode(reason.code ?? null); });
     return subscribe(message => {
       if (message.type === "state") update(message.value as View);
-      if (message.type === "error") setError(message.message ?? "状態を確認できません。");
+      if (message.type === "error") { setError(message.message ?? "状態を確認できません。"); setStartupErrorCode(message.code ?? null); }
       if (message.type === "open-server") { setUrl(message.url ?? ""); setDiscovery(null); setError(null); setDialog("add"); }
     });
   }, []);
@@ -40,7 +41,7 @@ export default function App() {
   useEffect(() => { if (view) document.documentElement.dataset.theme = view.settings.theme; }, [view?.settings.theme]);
   async function act(op: string, body: unknown = {}) {
     setRequesting(true); setError(null); setNotice(null);
-    try { const result = await native(op, body); setView(await native<View>("state")); return result; }
+    try { const result = await native(op, body); setView(await native<View>("state")); setError(null); return result; }
     catch (reason) { setError((reason as Error).message); return undefined; }
     finally { setRequesting(false); }
   }
@@ -109,7 +110,9 @@ export default function App() {
     </aside>
     <main className="play-main">
       {!isNative ? <section className="play-empty"><h1>mcmere Playで開いてください</h1><p>この画面はWindowsアプリの中で利用できます。</p></section> :
-      !view ? <section className="play-empty"><LoaderCircle className="spin" /><p>読み込み中</p><ErrorText message={error} /></section> :
+      !view ? <section className="play-empty">{error ? <><h1>設定を確認してください</h1><ErrorText message={error} />
+        {startupErrorCode === "settings_corrupt" && <><p>前回の保存時点の設定に戻します。ゲームデータはそのまま残ります。</p><button className="primary" data-action="recover-settings" disabled={requesting} onClick={() => void act("recover-settings")}>保存済みの設定を復元</button></>}
+      </> : <><LoaderCircle className="spin" /><p>読み込み中</p></>}</section> :
       applicationSettings ? <><h1>アプリ設定</h1><div className="play-settings">
         <label>外観<select aria-label="外観" value={view.settings.theme} onChange={event => void act("theme", { theme: event.target.value })}><option value="system">システム設定</option><option value="light">ライト</option><option value="dark">ダーク</option></select></label>
         <div className="play-settings-row"><div><strong>mcmere Play</strong><small>バージョン {view.version}</small></div><button onClick={() => void act("open-releases")}>リリースを確認</button></div>

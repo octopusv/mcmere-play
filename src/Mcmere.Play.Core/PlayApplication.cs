@@ -104,6 +104,17 @@ public sealed class PlayApplication : IDisposable
     {
         await _settings.UpdateAsync(settings => settings with { Theme = theme }, ct); Changed?.Invoke();
     }
+    public async Task RestoreSettingsAsync(CancellationToken ct = default)
+    {
+        if (!await _operation.WaitAsync(0, ct)) throw new DistributionException("operation_busy", "処理が終わってから設定を復元してください。");
+        try
+        {
+            await _settings.RestorePreviousAsync(ct);
+            foreach (var connection in _connections.Values) connection.Dispose();
+            _connections.Clear(); _views.Clear(); Changed?.Invoke();
+        }
+        finally { _operation.Release(); }
+    }
     public async Task SetMemoryAsync(string id, int memoryMiB, CancellationToken ct = default)
     {
         if (_busy) throw new DistributionException("operation_busy", "処理が終わってから設定してください。");
@@ -132,26 +143,26 @@ public sealed class PlayApplication : IDisposable
         if (!System.IO.Directory.Exists(directory)) throw new DistributionException("folder_missing", "フォルダーが見つかりません。");
         if (!_reuse.Contains(directory, StringComparer.OrdinalIgnoreCase)) _reuse.Add(Path.GetFullPath(directory));
     }
-    public async Task ImportFileAsync(string id, string fileId, string sourcePath, CancellationToken ct = default)
+    public Task ImportFileAsync(string id, string fileId, string sourcePath, CancellationToken ct = default) => RunAsync(id, async token =>
     {
-        if (_busy) throw new DistributionException("operation_busy", "処理が終わってからファイルを追加してください。");
-        await RequireServerAsync(id, ct);
+        await RequireServerAsync(id, token);
         var file = Current(id).Manifest?.Files.FirstOrDefault(file => file.Id == fileId) ?? throw new DistributionException("file_not_found", "配布ファイルが見つかりません。");
         PlayFiles.NoLinksToRoot(sourcePath);
-        if (!File.Exists(sourcePath) || new FileInfo(sourcePath).Length != file.Length || await PlayFiles.Sha512Async(sourcePath, ct) != file.Sha512)
+        if (!File.Exists(sourcePath) || new FileInfo(sourcePath).Length != file.Length || await PlayFiles.Sha512Async(sourcePath, token) != file.Sha512)
             throw new DistributionException("file_mismatch", "選択したファイルは必要なバージョンと一致しません。");
         var target = PlayFiles.Child(_paths.Cache, "sha512-" + file.Sha512);
+        using var cacheLock = await CacheAccess.AcquireAsync(target, token);
         var temp = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             await using (var input = File.OpenRead(sourcePath))
-            await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None)) await input.CopyToAsync(output, ct);
-            if (await PlayFiles.Sha512Async(temp, ct) != file.Sha512) throw new DistributionException("file_changed", "コピー中にファイルが変更されました。");
+            await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None)) await input.CopyToAsync(output, token);
+            if (await PlayFiles.Sha512Async(temp, token) != file.Sha512) throw new DistributionException("file_changed", "コピー中にファイルが変更されました。");
             File.Move(temp, target, true);
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
         Set(id, Current(id) with { Stage = "idle", Error = null, ErrorCode = null });
-    }
+    }, ct);
     public async Task RemoveAsync(string id, CancellationToken ct = default)
     {
         if (_busy) throw new DistributionException("operation_busy", "処理が終わってから登録を外してください。");
