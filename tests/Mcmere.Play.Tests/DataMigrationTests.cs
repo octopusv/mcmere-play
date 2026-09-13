@@ -138,6 +138,20 @@ public sealed class DataMigrationTests : IDisposable
         Assert.False(Directory.Exists(Destination));
     }
     [Fact]
+    public async Task InterruptedTemporaryWritesAreDiscardedBeforeRetryingTheSameMigration()
+    {
+        var paths = await Prepare(); var migration = new DataMigration(paths, _activity); var plan = await migration.PlanAsync(Destination);
+        var id = Guid.NewGuid().ToString("N"); var stageDirectory = Path.Combine(_root, ".mcmere-play-migration-" + id);
+        var stage = new { id, planId = plan.Id, controlRoot = paths.ControlRoot, source = paths.Root, destination = Destination, stageDirectory };
+        await Write(stageDirectory, "settings.json." + Guid.NewGuid().ToString("N") + ".tmp", "interrupted temporary write");
+        await File.WriteAllBytesAsync(Path.Combine(stageDirectory, "migration-stage.json"), DistributionJson.Bytes(stage));
+        await File.WriteAllBytesAsync(Path.Combine(paths.ControlRoot, "migration-pending.json"), DistributionJson.Bytes(stage));
+        var receipt = await migration.MigrateAsync(plan);
+        Assert.Equal(id, receipt.Id);
+        Assert.Empty(Directory.GetFiles(Destination, "settings.json.*.tmp"));
+        Assert.Equal(Destination, await DataLocation.ResolveAsync(paths.ControlRoot));
+    }
+    [Fact]
     public async Task MissingMigratedDriveDoesNotSilentlyCreateAnEmptyReplacement()
     {
         var paths = await Prepare(); var migration = new DataMigration(paths, _activity);

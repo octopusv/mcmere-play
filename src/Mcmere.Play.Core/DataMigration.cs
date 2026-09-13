@@ -216,8 +216,15 @@ public sealed class DataMigration(PlayPaths paths, IPlayActivity activity, IAvai
         if (!File.Exists(marker) || new FileInfo(marker).Length > 16384 || DistributionJson.Read<MigrationStage>(File.ReadAllBytes(marker)) != stage)
             throw new DistributionException("migration_state", "一時コピーの所有情報を確認できません。");
         var expected = files.Select(file => file.Path).Append("migration-stage.json").Append("migration-receipt.json").ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (PlayFiles.Files(root).Any(file => !expected.Contains(Path.GetRelativePath(root, file).Replace('\\', '/'))))
+        foreach (var file in PlayFiles.Files(root).ToArray())
+        {
+            var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
+            if (expected.Contains(relative)) continue;
+            if (relative.Length > 37 && relative.EndsWith(".tmp", StringComparison.Ordinal) && relative[^37] == '.' &&
+                Guid.TryParseExact(relative.Substring(relative.Length - 36, 32), "N", out _) && expected.Contains(relative[..^37]))
+            { File.Delete(file); continue; }
             throw new DistributionException("migration_state", "一時コピーに別のファイルが含まれています。別の空の保存先を選択してください。");
+        }
     }
     private async Task RelocateProfilesAsync(string stageRoot, string destination, CancellationToken ct)
     {
