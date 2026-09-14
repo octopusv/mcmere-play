@@ -38,6 +38,15 @@ jobs:
         env:
           PLAY_RELEASE_VERSION: ${{ inputs.version || '0.1.0' }}
         run: ./scripts/Test-Installer.ps1 -SetupPath "./artifacts/mcmere-play-Setup-$env:PLAY_RELEASE_VERSION.exe" -DataDirectory "${{ github.workspace }}/.test-data/installer-ci"
+      - name: Verify test certificate helpers without changing trust
+        shell: pwsh
+        run: |
+          $certificate = ./scripts/Initialize-TestCertificate.ps1
+          ./scripts/Publish.ps1 -Version 0.1.0 -SkipBuild -CertificateThumbprint $certificate.thumbprint -SelfSignedTest
+          $bundles = @(Get-ChildItem ./artifacts/self-signed-test -Directory -Filter 'certificate-bundle-*')
+          if ($bundles.Count -ne 1) { throw 'Unexpected test certificate bundle count.' }
+          $setup = Join-Path $bundles[0].FullName 'mcmere-play-Setup-0.1.0-self-signed-test.exe'
+          ./scripts/Test-CertificateBundle.ps1 -BundleDirectory $bundles[0].FullName -TestDirectory "$PWD/.test-data/日本語 certificate & spaces !" -SignedFilePath $setup -CertificateThumbprint $certificate.thumbprint
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: mcmere-play-${{ inputs.version || '0.1.0' }}-${{ github.sha }}
