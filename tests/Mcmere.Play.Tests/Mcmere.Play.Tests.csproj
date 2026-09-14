@@ -8,5 +8,6 @@
     <ProjectReference Include="../../src/Mcmere.Play.Core/Mcmere.Play.Core.csproj" />
     <Using Include="Xunit" />
     <Compile Include="../../src/Mcmere.Play.Setup/WindowsRegistration.cs" Link="WindowsRegistration.cs" />
+    <Compile Include="../../src/Mcmere.Play.Setup/WindowsShellLink.cs" Link="WindowsShellLink.cs" />
   </ItemGroup>
 </Project>

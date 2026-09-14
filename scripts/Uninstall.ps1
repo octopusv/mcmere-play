@@ -46,12 +46,28 @@ try {
         if ($command -and $command.GetValue('').StartsWith('"' + $exe + '"',[StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $protocol -Recurse -Force }
         $shortcutPath = Join-Path ([Environment]::GetFolderPath('Programs')) 'mcmere Play.lnk'
         if (Test-Path -LiteralPath $shortcutPath) {
-            $shell = New-Object -ComObject WScript.Shell
-            try {
-                $shortcut = $shell.CreateShortcut($shortcutPath)
-                try { if ($shortcut.TargetPath -ieq $exe) { Remove-Item -LiteralPath $shortcutPath -Force } }
-                finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut) }
-            } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) }
+            Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+public static class McmerePlayShortcutTarget {
+    [ComImport, Guid("000214F9-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellLinkW {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int count, IntPtr findData, uint flags);
+    }
+    public static string Read(string path) {
+        object instance = Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("00021401-0000-0000-C000-000000000046"), true));
+        try {
+            ((IPersistFile)instance).Load(path, 0);
+            var value = new StringBuilder(32768);
+            ((IShellLinkW)instance).GetPath(value, value.Capacity, IntPtr.Zero, 4);
+            return value.ToString();
+        } finally { Marshal.FinalReleaseComObject(instance); }
+    }
+}
+'@
+            if ([McmerePlayShortcutTarget]::Read($shortcutPath) -ieq $exe) { Remove-Item -LiteralPath $shortcutPath -Force }
         }
     } else {
         $registration = Join-Path $dataRoot 'registration-test.json'

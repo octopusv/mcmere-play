@@ -49,15 +49,7 @@ public sealed class WindowsRegistration(RegistrationLocations? locations = null)
         }
         var shortcutPath = _locations.ShortcutPath;
         Directory.CreateDirectory(Path.GetDirectoryName(shortcutPath)!);
-        var type = Type.GetTypeFromProgID("WScript.Shell") ?? throw new InvalidOperationException("ショートカットを作成できません。");
-        dynamic shell = Activator.CreateInstance(type)!;
-        try
-        {
-            dynamic shortcut = shell.CreateShortcut(shortcutPath);
-            try { shortcut.TargetPath = exe; shortcut.WorkingDirectory = installation.AppDirectory; shortcut.IconLocation = exe; shortcut.Save(); }
-            finally { Marshal.FinalReleaseComObject(shortcut); }
-        }
-        finally { Marshal.FinalReleaseComObject(shell); }
+        WindowsShellLink.Write(shortcutPath, exe, installation.AppDirectory);
         return Task.CompletedTask;
     }
     public Task RemoveAsync(InstallationInfo installation, CancellationToken ct)
@@ -75,15 +67,7 @@ public sealed class WindowsRegistration(RegistrationLocations? locations = null)
     }
     private bool OwnsShortcut(string exe)
     {
-        var type = Type.GetTypeFromProgID("WScript.Shell") ?? throw new InvalidOperationException("ショートカットを確認できません。");
-        dynamic shell = Activator.CreateInstance(type)!;
-        try
-        {
-            dynamic shortcut = shell.CreateShortcut(_locations.ShortcutPath);
-            try { return string.Equals((string)shortcut.TargetPath, exe, StringComparison.OrdinalIgnoreCase); }
-            finally { Marshal.FinalReleaseComObject(shortcut); }
-        }
-        finally { Marshal.FinalReleaseComObject(shell); }
+        return string.Equals(WindowsShellLink.Target(_locations.ShortcutPath), exe, StringComparison.OrdinalIgnoreCase);
     }
     private static bool OwnsCommand(string command, string exe) => command.Equals(Quote(exe) + " \"%1\"", StringComparison.OrdinalIgnoreCase);
     private static string Quote(string value) => "\"" + value + "\"";
