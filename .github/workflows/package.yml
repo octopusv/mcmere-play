@@ -38,6 +38,16 @@ jobs:
         env:
           PLAY_RELEASE_VERSION: ${{ inputs.version || '0.1.0' }}
         run: ./scripts/Test-Installer.ps1 -SetupPath "./artifacts/mcmere-play-Setup-$env:PLAY_RELEASE_VERSION.exe" -DataDirectory "${{ github.workspace }}/.test-data/installer-ci"
+      - name: Verify test certificate helpers without changing trust
+        shell: pwsh
+        run: |
+          $certificate = ./scripts/Initialize-TestCertificate.ps1
+          $probe = Join-Path $PWD 'artifacts/signing-probe.exe'
+          Copy-Item ./src/Mcmere.Play/bin/Release/net8.0-windows/mcmere-play.exe $probe
+          $signer = Get-Item -LiteralPath ('Cert:\CurrentUser\My\' + $certificate.thumbprint)
+          $null = Set-AuthenticodeSignature -LiteralPath $probe -Certificate $signer -HashAlgorithm SHA256
+          $bundle = ./scripts/Write-TestCertificateBundle.ps1 -Version 0.1.0 -CertificateThumbprint $certificate.thumbprint -SetupPath $probe -OutputDirectory "$PWD/.test-data/certificate-fixture" | ConvertFrom-Json
+          ./scripts/Test-CertificateBundle.ps1 -BundleDirectory $bundle.bundle -TestDirectory "$PWD/.test-data/日本語 certificate & spaces !" -SignedFilePath $probe -CertificateThumbprint $certificate.thumbprint
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: mcmere-play-${{ inputs.version || '0.1.0' }}-${{ github.sha }}
