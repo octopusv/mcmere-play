@@ -42,12 +42,11 @@ jobs:
         shell: pwsh
         run: |
           $certificate = ./scripts/Initialize-TestCertificate.ps1
-          $probe = Join-Path $PWD 'artifacts/signing-probe.exe'
-          Copy-Item ./src/Mcmere.Play/bin/Release/net8.0-windows/mcmere-play.exe $probe
-          $signer = Get-Item -LiteralPath ('Cert:\CurrentUser\My\' + $certificate.thumbprint)
-          $null = Set-AuthenticodeSignature -LiteralPath $probe -Certificate $signer -HashAlgorithm SHA256
-          $bundle = ./scripts/Write-TestCertificateBundle.ps1 -Version 0.1.0 -CertificateThumbprint $certificate.thumbprint -SetupPath $probe -OutputDirectory "$PWD/.test-data/certificate-fixture" | ConvertFrom-Json
-          ./scripts/Test-CertificateBundle.ps1 -BundleDirectory $bundle.bundle -TestDirectory "$PWD/.test-data/日本語 certificate & spaces !" -SignedFilePath $probe -CertificateThumbprint $certificate.thumbprint
+          ./scripts/Publish.ps1 -Version 0.1.0 -SkipBuild -CertificateThumbprint $certificate.thumbprint -SelfSignedTest
+          $bundles = @(Get-ChildItem ./artifacts/self-signed-test -Directory -Filter 'certificate-bundle-*')
+          if ($bundles.Count -ne 1) { throw 'Unexpected test certificate bundle count.' }
+          $setup = Join-Path $bundles[0].FullName 'mcmere-play-Setup-0.1.0-self-signed-test.exe'
+          ./scripts/Test-CertificateBundle.ps1 -BundleDirectory $bundles[0].FullName -TestDirectory "$PWD/.test-data/日本語 certificate & spaces !" -SignedFilePath $setup -CertificateThumbprint $certificate.thumbprint
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: mcmere-play-${{ inputs.version || '0.1.0' }}-${{ github.sha }}

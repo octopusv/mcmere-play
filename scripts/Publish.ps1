@@ -13,7 +13,8 @@ if ($RequireSignature -and !$certificate) { throw 'Supply -CertificateThumbprint
 if ($certificate -and $certificate.Subject -eq $certificate.Issuer -and !$SelfSignedTest) { throw 'Self-signed certificates require -SelfSignedTest and separate test artifacts.' }
 if ($SelfSignedTest) {
     if (!$certificate -or $certificate.Subject -ne 'CN=mcmere Play Self-Signed Test' -or $certificate.Subject -ne $certificate.Issuer) { throw 'SelfSignedTest requires the dedicated self-signed test certificate.' }
-    $eku = @($certificate.EnhancedKeyUsageList | ForEach-Object { $_.ObjectId.Value })
+    $ekuExtension = $certificate.Extensions | Where-Object { $_.Oid.Value -eq '2.5.29.37' }
+    $eku = @($ekuExtension.EnhancedKeyUsages | ForEach-Object { $_.Value })
     if ($eku.Count -ne 1 -or $eku[0] -ne '1.3.6.1.5.5.7.3.3') { throw 'The test certificate must allow code signing only.' }
     $constraints = $certificate.Extensions | Where-Object { $_.Oid.Value -eq '2.5.29.19' }
     if (!$constraints -or $constraints.CertificateAuthority) { throw 'SelfSignedTest must not use a CA certificate.' }
