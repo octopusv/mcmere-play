@@ -1,6 +1,6 @@
 # SetupとReleaseの方針
 
-実装前の配布仕様。現時点ではSetup生成スクリプト、CIのRelease workflow、配布用バイナリは存在しない。
+SetupとZIP、署名済みアプリ更新情報はローカルで生成できる。Windows CIはbuild・テスト・UIを検証し、PRまたは手動実行のpackage workflowはSetup・ZIPとインストーラーの検証結果を生成する。公開バイナリReleaseと実ゲームでの最終確認は準備中。
 
 ## 独立したアプリとして配布する
 
@@ -27,6 +27,25 @@ mcmere Playはmcmere本体とは別のバージョン、Setup、GitHub Release�
 
 ## Releaseの作成順
 
+ローカルの配布物はPowerShell 7から生成する。生成結果はartifactsに保存し、Gitへコミットしない。
+
+```powershell
+.\scripts\Publish.ps1 -Version 0.1.0
+.\scripts\Test-Installer.ps1 -SetupPath .\artifacts\mcmere-play-Setup-0.1.0.exe -DataDirectory .\.test-data\installer-acceptance
+```
+
+受け入れスクリプトは新しい.test-data内にだけインストールし、埋め込みpayload検証、日本語と空白を含む保存先、インストール情報からの保存先解決、実際のアプリ起動、同じ版の再導入、アンインストール、設定・ゲームデータ保持を確認する。`-UpgradeSetupPath`に上位版のSetupを指定すると、バージョンをまたぐ更新と更新後のアプリ表示も確認する。各工程のJSONとPNGを保存する。Windows登録は検証用の記録に置き換えるため、このスクリプト単体では実際のprotocol登録を証明しない。WindowsRegistrationTestsは別の一時HKCUキーとショートカットで本番と同じ登録コードを検証する。
+
+セットアップはユーザー単位で動作し、起動中のPlayを上書きしない。更新中のjournalからアプリと登録情報を回復し、破損payloadでは切り替えない。アンインストールは専用領域のappだけを削除する。通常の配布元からPrismやJavaを取得する処理と、MicrosoftのWebView2不足時の導入処理は別である。WebView2の導入分岐は、RuntimeがないWindows環境での追加検証が必要。
+
+現行のPublish.ps1が生成するSetupはコード署名されていない。SHA256SUMSとpayload検証はファイル整合性の確認であり、配布者のコード署名の代わりではない。
+
+設定復旧のネイティブ検証には以下を使う。起動画面の復元ボタンから通常のWebView2 bridgeを通して操作し、以前の設定と元の破損ファイル、ゲームデータが保持されたことを検証する。DLLを指定する場合は.NET Runtimeを使用する。自己完結した配布EXEもApplicationPathに指定できる。
+
+```powershell
+.\scripts\Test-SettingsRecovery.ps1 -ApplicationPath .\src\Mcmere.Play\bin\Release\net8.0-windows\mcmere-play.dll -DataDirectory .\.test-data\settings-recovery
+```
+
 1. リリースするcommitとバージョンを確定する。
 2. UI、.NET、同期エンジン、Prism連携、インストーラーの検証を実行する。
 3. 配布する同一payloadからEXEとZIPを生成し、ハッシュと署名を確認する。
@@ -37,8 +56,52 @@ mcmere Playはmcmere本体とは別のバージョン、Setup、GitHub Release�
 
 最初のバイナリReleaseには、通信断・容量不足・同時起動・更新中の強制終了・ホワイトリスト削除・既存設定保持の試験も必要。配布APIと公開パックの準備ができていることも確認する。
 
-将来のGitHub Actionsは、PR時にbuild/test、保護されたrelease操作でpackage/sign/uploadを実行する。バージョンとpayloadの不一致や、未検証バイナリの公開を防ぐ。
+GitHub ActionsのBuild release packageはPRで検証用0.1.0を生成し、手動実行では数値バージョンを指定できる。生成物はActions artifactであり、自動的にはReleaseを公開しない。署名秘密鍵はCIへ渡さず、公開前の手順で署名済み更新情報を作成する。EXEをコード署名する場合も、最終的な署名後のファイルに対して更新情報を生成する。
+
+## 保存先変更の検証
+
+```powershell
+.\scripts\Test-DataMigration.ps1 -SetupPath .\artifacts\mcmere-play-Setup-0.1.0.exe -UpgradeSetupPath .\artifacts\mcmere-play-Setup-0.1.1.exe -DataDirectory .\.test-data\data-migration
+```
+
+このスクリプトは実際の確認画面とnative bridgeから移行を実行し、再起動後の保存先、元データ保持、Prism認証ファイルの非コピー、移行後のSetup更新とアンインストールを確認する。RuntimeFixtureRootに隔離したランタイム検証環境を指定すると、Javaのコピー後のハッシュと実行バージョンも確認する。SetupPathの代わりにApplicationPathへ開発ビルドを指定する場合、インストール・更新・削除の工程は対象外になる。アプリの自己更新まで組み合わせる場合はTest-AppUpdate.ps1に-NativeParent -RelocateBeforeUpdateを指定する。
+
+移行ではapp・updates・WebView2の領域と起動ロックを元の設置先に残す。コピー先と移行記録を照合してから参照を切り替え、コピー中の変更・破損・容量不足・ゲーム起動を検出した場合は切り替えを止める。Prism側のゲーム資材と認証ファイルの分離は、[Prism 11.1.0のデータ構成](https://github.com/PrismLauncher/PrismLauncher/blob/11.1.0/launcher/Application.cpp)を参照する。
+
+## アプリ更新の署名
+
+Playは公開GitHub Releases APIから、このリポジトリの数値tagとapp-update.jsonを取得する。初期版はPrereleaseも対象とする。署名済み情報に記載されたバージョン、Windows x64、同じリポジトリ内のSetup URL、サイズ、SHA256を確認する。署名鍵はアプリに埋め込んだ公開鍵に固定し、MODパックの鍵と共有しない。転送先を制限し、ゲーム配布のsessionを送らない。確認済みの上位版を保存し、古い版への置き換えを拒否する。
+
+このリポジトリには公開鍵src/Mcmere.Play.Core/app-update-key.jsonだけを含める。秘密鍵はローカルのWindowsユーザーに対してDPAPIで保護する。別のWindowsユーザーやGitHub Actionsでは、その暗号化ファイルを直接利用できない。初期化スクリプトは既存鍵を上書きしない。フォークする場合は配布先定数・署名スクリプトのリポジトリURLを変更し、自分の公開鍵を組み込んでからアプリを配布する。
+
+```powershell
+.\scripts\Sign-AppUpdate.ps1 -Version 0.1.1 -SetupPath .\artifacts\mcmere-play-Setup-0.1.1.exe -PrivateKeyPath .\.local\release-key.protected -OutputPath .\artifacts\app-update.json -Prerelease
+```
+
+signは検証が終わったSetupに対して行い、同じGitHub Releaseへapp-update.jsonを添付する。これは更新情報の署名であり、EXEのAuthenticode署名ではない。公開前に、旧版Setup・新しいSetup・署名済み情報を使って次を実行する。
+
+```powershell
+.\scripts\Test-AppUpdate.ps1 -PreviousSetupPath .\artifacts\mcmere-play-Setup-0.1.0.exe -UpdateSetupPath .\artifacts\mcmere-play-Setup-0.1.1.exe -SignedManifestPath .\artifacts\app-update.json -DataDirectory .\.test-data\app-update
+```
+
+この検証はHTTP応答にローカルのfixtureを使うが、アプリに固定した公開鍵、実際の署名、Setupの取得・ハッシュ検証、親プロセス終了待ち、実Setupによる更新、更新後のネイティブ起動、設定とゲームデータ保持を確認する。実際のGitHubへの更新確認は--smoke-test --smoke-check-updateを使って独立した保存先で確認できる。PrismログインやMinecraft接続はこの検証に含まない。
+
+-NativeParentを追加すると、署名済みの更新準備後に旧版の実アプリを起動し、「再起動して更新」の画面操作、通常のWebView2 bridge、アプリの終了、実Setupへの引き継ぎを通して検証する。この場合は旧版にも更新機能とsmoke検証の実装が必要。Setupは検証用の登録を使い、通常のWindows登録を変更しない。
+
+技術参照: [GitHub Releases API](https://docs.github.com/en/rest/releases/releases#list-releases)、[WindowsでのSecureString保護](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/convertfrom-securestring)。
+
+## サーバーとの統合検証
+
+mcmere側のscripts/Test-PlayDistribution.ps1に、このリポジトリでbuildしたアプリを渡す。mcmereの実際の公開処理と配布APIに対し、実参加者UIから登録・名前照合・取得・同期を実行し、鍵更新後の永続化とホワイトリスト削除時の拒否を確認する。両リポジトリはHTTP契約だけで接続し、ビルドを兄弟チェックアウトへ依存させない。合成JARと稼働状態を使用するため、この結果は実Minecraft接続の代わりにしない。
 
 ## リポジトリとReleaseに含めないもの
 
 プレイヤー情報、ホワイトリスト、サーバーIDと個別接続先、認証token、Prismアカウントファイル、署名秘密鍵、実運用の構成・ログ、ワールド、取得したMinecraft/MODのキャッシュはコミットしない。実運用に依存する値は設定として注入し、説明やテストには合成データを使う。
+
+## コード署名と診断
+
+運用側のコード署名証明書をCurrentUser/Myへ用意し、Publish.ps1へ-CertificateThumbprintと-RequireSignatureを指定すると、アプリEXEとSetupをSHA256で署名してタイムスタンプを付けます。署名したアプリからpayloadを作り、Setup署名後のSHA256を出力します。証明書がない場合の生成物は未署名です。更新情報への署名とは区別してください。
+
+処理ログは設置先のdiagnostics/logsへ最大10ファイル、各5MiBで保存します。診断ZIPは利用者の保存操作でだけ生成し、確認済みのJava/Prism版、OS/CPU、エラーcodeと処理結果を含みます。ファイル差分は書き出すたびに変わる匿名IDに変換し、実パス・名前・認証情報を含めません。
+
+アンインストール画面ではデータ保持が既定です。ゲームデータ削除を選ぶと保存先と影響を表示して再確認します。移行記録が一致する現在の保存先と元の設置先から、Playの専用データだけを削除し、無関係なファイルを残します。過去の別の移行先へ残したコピーは自動削除しません。

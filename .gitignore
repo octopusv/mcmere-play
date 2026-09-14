@@ -49,6 +49,7 @@ secrets.json
 *.key
 *.pfx
 *.p12
+*.protected
 installation.json
 
 # Editors and OS files

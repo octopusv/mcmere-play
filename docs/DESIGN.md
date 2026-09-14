@@ -1,6 +1,6 @@
 # mcmere Play — クライアント配布の設計
 
-設計版: 1 / 2026-09-14 / 実装前
+設計版: 1 / 2026-09-14 / 実装仕様
 
 ## 1. 決定した方針
 
@@ -29,7 +29,8 @@
 
 参加者アプリのプロジェクト名は`Mcmere.Play.Core`、`Mcmere.Play`、`Mcmere.Play.Setup`を基本とする。配布contractsはschema version付きの独立した境界として実装し、mcmereのデータベースや兄弟リポジトリのC#プロジェクトをクライアントから直接参照しない。共通UIのトークンを移植する場合は出典とライセンスを保持する。
 
-ここに記載するproject、API、CLI、Setupは追加予定の仕様であり、現在のリポジトリに実装済みという意味ではない。
+ここに記載するproject、API、CLI、Setupは完成時の仕様。現在の実装範囲はREADMEとテストを参照する。
+
 ## 2. 参照構成と配布対象
 
 説明・初期の互換性検証ではMinecraft 1.21.1、NeoForge 21.1.250、Java 21を参照構成として使う。個別サーバー名・登録ID・プレイヤー情報・ホワイトリストはリポジトリに含めず、接続時の配布情報から取得する。
@@ -195,6 +196,8 @@ manifestはUTF-8の生成済みbytesに対するRSA-PSS/SHA-256の分離署名�
 
 最初の配布ページはHTTPSを信頼の起点とし、配布元オリジンと公開鍵を保存する。未知の配布元を追加するときだけホスト名を表示する。HTTPS経由の初回取得以上の本人保証は主張しない。鍵の更新は旧鍵で署名された新鍵を受け入れ、旧鍵が失われた場合は配布元を再登録する。
 
+ServerInfoのkeyTransitionsは直近16世代までの移行証明を含む。証明はmcmere.pack-key-transitionという用途、schemaVersion、serverPublicId、previousKeyId、nextKey、minimumSequenceを旧鍵で署名する。保存済み鍵から現在の鍵へつながる証明だけを検証し、順序・用途・サーバー・署名・鍵の循環を確認する。新鍵と適用開始sequenceを設定の復旧用スナップショットにも保持し、古い接続で元の鍵へ戻さない。鍵更新は同じファイルの新releaseId/sequenceとして公開し、署名だけの適用ではゲームバックアップを減らさない。
+
 新しい有効版の選択はオンラインAPIで行い、署名だけでは古い版の起動を許可しない。sequence低下を検出する。以前の構成に戻す場合は同じファイルを参照する新sequenceの版を発行する。
 
 ## 8. サーバーから公開版を作る
@@ -354,7 +357,7 @@ metadataと認証応答は`Cache-Control: no-store`。tokenはAuthorizationヘ�
 
 すべて既存のadministrator権限を要求し、公開先設定の変更はownerに限定する。
 
-| 管理API | 予定するCLI |
+| 管理API | CLI |
 |---|---|
 | `GET /api/servers/{id}/distribution` | `mcmere distribution show <server>` |
 | `PUT /api/servers/{id}/distribution` | `mcmere distribution configure <server> --file <json>` |
@@ -366,7 +369,7 @@ metadataと認証応答は`Cache-Control: no-store`。tokenはAuthorizationヘ�
 | `POST .../distribution/releases` | `mcmere distribution publish <server> <candidate> --wait` |
 | `POST .../distribution/disable` | `mcmere distribution disable <server>` |
 
-これらは追加予定の契約であり、現行CLIではまだ利用できない。変更系はexpectedRevision、長期処理はIdempotency-Keyとjobsを利用する。公開版・候補の更新競合は409で再計画する。候補編集ではファイル分類、配布元、配布条件の確認記録、設定のポリシー、推奨メモリを更新できる。内容変更はcandidate hashを更新して以前の検証結果を無効化する。previewは登録済み資材から作る管理者用のテストパックであり、未解決ファイルを自動的に許可する経路にはしない。
+これらの管理API・CLIはmcmere側に実装済み。変更系はexpectedRevision、長期処理はIdempotency-Keyとjobsを利用する。公開版・候補の更新競合は409で再計画する。候補編集ではファイル分類、配布元、配布条件の確認記録、設定のポリシー、推奨メモリを更新できる。内容変更はcandidate hashを更新して以前の検証結果を無効化する。previewは登録済み資材から作る管理者用のテストパックであり、未解決ファイルを自動的に許可する経路にはしない。
 
 ## 12. 配布・更新・診断
 
@@ -375,8 +378,9 @@ metadataと認証応答は`Cache-Control: no-store`。tokenはAuthorizationヘ�
 - Play本体の更新情報はパックとは別のアプリ配布元から取得し、署名・ハッシュ確認後にゲーム終了時へ適用する。公開MODパックから任意EXE更新を指示できない。
 - パックのminimumPlayVersionを満たさない場合はアプリ更新を案内し、新形式を推測して処理しない。
 - データ保存先の変更はPrismとゲーム終了後にコピー・検証してから参照を切り替える。元データの削除は成功後に別操作とする。
+- アプリの設置先とデータ保存先を分離し、設置先のdata-location.jsonから検証済みの移行先を解決する。移行対象はPlay設定、runtimes、state、cache、staging、backups、logsと、Prismのinstances・assets・libraries・meta・icons。Prism全体設定と認証ファイルは移行せず、確認画面で再ログインを案内する。既存セーブとゲーム個人設定はコピー後も元に残す。
 - アンインストールはアプリを削除し、ゲームデータは既定で残す。全データ削除を選ぶ場合だけ保存先と影響を表示する。
-- ログはローカル保存、最大10ファイル×5MiB。診断書き出しは利用者操作で行い、送信は自動化しない。
+- ログは設置先のdiagnostics/logsにローカル保存し、最大10ファイル×5MiB。移行中も追記できるよう設置先に残す。診断書き出しは利用者操作で行い、送信は自動化しない。
 - 診断にはアプリ版、OS/CPU、Java版、Prism版、匿名化したファイル差分、エラーcodeを含める。token、Prism認証ファイル、ユーザーディレクトリ名、ホワイトリスト一覧を含めない。
 
 ## 13. 実装順と完了条件

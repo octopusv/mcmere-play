@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../Mcmere.Distribution.Contracts/Mcmere.Distribution.Contracts.csproj" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="app-update-key.json" LogicalName="app-update-key.json" /></ItemGroup>
+</Project>

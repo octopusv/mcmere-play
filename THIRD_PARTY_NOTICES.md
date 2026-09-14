@@ -4,9 +4,19 @@ mcmere Play's original code and documentation are licensed under the MIT License
 
 ## mcmere
 
-The design in this repository is adapted from the client distribution design developed for [mcmere](https://github.com/octopusv/mcmere).
+The design, shared interface styles, and application icon in this repository are adapted from [mcmere](https://github.com/octopusv/mcmere).
 
 Copyright (c) 2026 mcmere contributors. Licensed under the MIT License. The permission and disclaimer text is reproduced in this repository's LICENSE file; this notice preserves the original copyright attribution.
+
+## UI and runtime dependencies
+
+| Component | Notice |
+|---|---|
+| React / React DOM | [MIT](licenses/react-MIT.txt) |
+| Lucide / derived Feather icons | [ISC / MIT](licenses/lucide-ISC-MIT.txt) |
+| Microsoft WebView2 SDK | [SDK license](licenses/WebView2-SDK.txt) |
+| .NET runtime | [MIT](licenses/dotnet-runtime-MIT.txt), [third-party notices](licenses/dotnet-third-party.txt) |
+| Windows Desktop runtime | [notices](licenses/dotnet-windows-desktop.txt) |
 
 ## Prism Launcher
 

@@ -1,0 +1,55 @@
+name: Build release package
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Numeric major.minor.patch version
+        required: true
+        default: '0.1.0'
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build and test
+        shell: pwsh
+        run: ./scripts/Build.ps1
+      - name: Generate Setup and ZIP
+        shell: pwsh
+        env:
+          PLAY_RELEASE_VERSION: ${{ inputs.version || '0.1.0' }}
+        run: ./scripts/Publish.ps1 -Version $env:PLAY_RELEASE_VERSION -SkipBuild
+      - name: Verify the generated installer
+        shell: pwsh
+        env:
+          PLAY_RELEASE_VERSION: ${{ inputs.version || '0.1.0' }}
+        run: ./scripts/Test-Installer.ps1 -SetupPath "./artifacts/mcmere-play-Setup-$env:PLAY_RELEASE_VERSION.exe" -DataDirectory "${{ github.workspace }}/.test-data/installer-ci"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: mcmere-play-${{ inputs.version || '0.1.0' }}-${{ github.sha }}
+          path: |
+            artifacts/mcmere-play-Setup-*.exe
+            artifacts/mcmere-play-*-win-x64.zip
+            artifacts/SHA256SUMS.txt
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: installer-evidence-${{ github.sha }}
+          path: .test-data/installer-ci/evidence/
+          retention-days: 7
