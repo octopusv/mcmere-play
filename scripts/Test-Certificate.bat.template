@@ -6,7 +6,10 @@ set "EXPECTED=@SHA256@"
 set "MODE=@MODE@"
 set "CERTUTIL=%SystemRoot%\System32\certutil.exe"
 set "ACTUAL="
-if not exist "%CERT%" goto :invalid
+if exist "%CERT%" goto :verify_certificate
+"%CERTUTIL%" -decode "%~f0" "%CERT%" >nul 2>&1
+if errorlevel 1 goto :invalid
+:verify_certificate
 pushd "%~dp0" >nul 2>&1
 if errorlevel 1 goto :invalid
 for /f "skip=1 delims=" %%H in ('"%CERTUTIL%" -hashfile mcmere-play-test.cer SHA256 2^>nul') do if not defined ACTUAL set "ACTUAL=%%H"
@@ -86,3 +89,5 @@ echo Certificate operation failed. Review the message above.
 echo Use Remove-Test-Certificate.bat to remove this exact certificate if needed.
 pause
 exit /b 5
+
+@PUBLICCERTIFICATE@

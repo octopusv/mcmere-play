@@ -1,7 +1,7 @@
 #requires -Version 7.0
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$Version, [Parameter(Mandatory)][string]$CertificateThumbprint,
-    [Parameter(Mandatory)][string]$SetupPath, [Parameter(Mandatory)][string]$OutputDirectory)
+    [Parameter(Mandatory)][string]$SetupPath, [Parameter(Mandatory)][string]$OutputDirectory, [switch]$SkipArchive)
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$' -or $CertificateThumbprint -notmatch '^[a-fA-F0-9]{40}$') { throw 'Invalid test bundle identity.' }
 $certificate = Get-Item -LiteralPath ('Cert:\CurrentUser\My\' + $CertificateThumbprint)
@@ -18,10 +18,11 @@ $publicCertificate = Join-Path $bundle 'mcmere-play-test.cer'
 Export-Certificate -Cert $certificate -FilePath $publicCertificate | Out-Null
 $sha = (Get-FileHash -LiteralPath $publicCertificate -Algorithm SHA256).Hash.ToLowerInvariant()
 $expires = $certificate.NotAfter.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')
+$pem = "-----BEGIN CERTIFICATE-----`r`n" + [Convert]::ToBase64String($certificate.RawData,[Base64FormattingOptions]::InsertLineBreaks) + "`r`n-----END CERTIFICATE-----"
 $template = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Test-Certificate.bat.template'))
 foreach ($mode in @('install','remove')) {
     $name = if ($mode -eq 'install') { 'Install-Test-Certificate.bat' } else { 'Remove-Test-Certificate.bat' }
-    $body = $template.Replace('@THUMBPRINT@',$certificate.Thumbprint).Replace('@SHA256@',$sha).Replace('@MODE@',$mode).Replace('@SUBJECT@',$certificate.Subject).Replace('@EXPIRES@',$expires)
+    $body = $template.Replace('@THUMBPRINT@',$certificate.Thumbprint).Replace('@SHA256@',$sha).Replace('@MODE@',$mode).Replace('@SUBJECT@',$certificate.Subject).Replace('@EXPIRES@',$expires).Replace('@PUBLICCERTIFICATE@',$pem)
     if ($body -match '@[A-Z0-9]+@') { throw 'Unresolved batch template field.' }
     [IO.File]::WriteAllText((Join-Path $bundle $name),($body -replace '\r?\n',"`r`n"),[Text.ASCIIEncoding]::new())
 }
@@ -34,7 +35,7 @@ $readme = @"
 
 ## 使い方
 
-1. ZIPを展開します。
+1. ZIPを展開するか、Releaseから Install-Test-Certificate.bat と $setupName の2つをダウンロードします。
 2. Install-Test-Certificate.batを開き、証明書・期限・登録先を確認します。
 3. 登録する場合だけ Y を押します。N または中止を選んだ場合は登録しません。
 4. 登録後、同じフォルダーの $setupName を実行します。
@@ -53,6 +54,8 @@ batやSetupがWindowsにブロックされた場合、SACを通過できたと�
 
 登録用batは同梱公開証明書のSHA256を確認し、不一致なら登録しません。秘密鍵はこのZIPに含めていません。
 
+公開証明書が同じフォルダーにない場合、bat内の公開データから mcmere-play-test.cer を作成します。証明書を別にダウンロードする必要はありません。既存ファイルがある場合は上書きせず、そのハッシュを確認します。
+
 ## 登録を戻す
 
 Remove-Test-Certificate.batを開いて Y を押すと、上記Thumbprintの証明書だけを、現在ユーザーの2つの登録先から削除します。アプリとゲームデータは削除しません。
@@ -64,8 +67,11 @@ Install-Test-Certificate.bat --verify-only は、ファイルのハッシュと�
 [IO.File]::WriteAllText((Join-Path $bundle 'README.txt'),$readme,[Text.UTF8Encoding]::new($false))
 $hashes = Get-ChildItem -LiteralPath $bundle -File | Sort-Object Name | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.Name }
 [IO.File]::WriteAllLines((Join-Path $bundle 'SHA256SUMS.txt'),$hashes,[Text.UTF8Encoding]::new($false))
-$zip = Join-Path $output ('mcmere-play-' + $Version + '-self-signed-test.zip')
-$temporary = Join-Path $output ('bundle-' + [Guid]::NewGuid().ToString('N') + '.zip')
-[IO.Compression.ZipFile]::CreateFromDirectory($bundle,$temporary,[IO.Compression.CompressionLevel]::Optimal,$false)
-[IO.File]::Move($temporary,$zip,$true)
+$zip = $null
+if (!$SkipArchive) {
+    $zip = Join-Path $output ('mcmere-play-' + $Version + '-self-signed-test.zip')
+    $temporary = Join-Path $output ('bundle-' + [Guid]::NewGuid().ToString('N') + '.zip')
+    [IO.Compression.ZipFile]::CreateFromDirectory($bundle,$temporary,[IO.Compression.CompressionLevel]::Optimal,$false)
+    [IO.File]::Move($temporary,$zip,$true)
+}
 [pscustomobject]@{bundle=$bundle;bundleZip=$zip;certificateThumbprint=$certificate.Thumbprint;certificateSha256=$sha;privateKeyIncluded=$false;trustedStoresModified=$false}|ConvertTo-Json

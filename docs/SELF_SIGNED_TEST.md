@@ -4,7 +4,9 @@
 
 ## 使う場合
 
-Releaseに添付された`mcmere-play-<version>-self-signed-test.zip`を展開します。同梱の`README.txt`を読み、`Install-Test-Certificate.bat`で証明書・有効期限・登録範囲を確認してください。登録する場合だけ`Y`を押し、その後に同梱の自己署名版Setupを実行します。
+Releaseから`Install-Test-Certificate.bat`と`mcmere-play-Setup-<version>-self-signed-test.exe`の2つをダウンロードします。`Install-Test-Certificate.bat`で証明書・有効期限・登録範囲を確認し、登録する場合だけ`Y`を押してください。その後に自己署名版Setupを実行します。ZIP版を展開して使うこともできます。
+
+batには公開証明書のデータを埋め込んでいます。同じフォルダーに`mcmere-play-test.cer`がなければ作成し、固定SHA256との一致を確認してから登録操作へ進みます。証明書を別にダウンロードする必要はありません。既存の証明書ファイルは上書きせず、不一致なら停止します。
 
 登録先は、現在のWindowsユーザーの「信頼されたルート証明機関」と「信頼された発行元」です。対象証明書はコード署名用途の非CA証明書ですが、同じ秘密鍵で署名された別のコードも信頼する設定になり得ます。管理者権限へ昇格せず、全ユーザーへの登録やDefender・SAC・PowerShell実行ポリシーの変更は行いません。
 

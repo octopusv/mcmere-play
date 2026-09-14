@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 $testRoot = [IO.Path]::GetFullPath($TestDirectory)
 if ($testRoot -notmatch '[\\/]\.test-data[\\/]' -or (Test-Path -LiteralPath $testRoot)) { throw 'Choose a new isolated .test-data directory.' }
 New-Item -ItemType Directory -Path $testRoot | Out-Null
-foreach ($name in @('mcmere-play-test.cer','Install-Test-Certificate.bat','Remove-Test-Certificate.bat')) {
+foreach ($name in @('Install-Test-Certificate.bat','Remove-Test-Certificate.bat')) {
     Copy-Item -LiteralPath (Join-Path $BundleDirectory $name) -Destination $testRoot
 }
 function Trust-State {
@@ -28,16 +28,29 @@ function Run-Batch([string]$Name, [string]$Argument, [string]$InputText = '') {
     } finally { $process.Dispose() }
 }
 $before = Trust-State
+$certificatePath = Join-Path $testRoot 'mcmere-play-test.cer'
+$expectedHash = (Get-FileHash -LiteralPath (Join-Path $BundleDirectory 'mcmere-play-test.cer') -Algorithm SHA256).Hash
 foreach ($batch in @('Install-Test-Certificate.bat','Remove-Test-Certificate.bat')) {
+    if (Test-Path -LiteralPath $certificatePath) { [IO.File]::Delete($certificatePath) }
     $result = Run-Batch $batch '--verify-only'
     if ($result.code -ne 0) { throw ('Batch validation failed: ' + $result.output + $result.error) }
+    if ((Get-FileHash -LiteralPath $certificatePath -Algorithm SHA256).Hash -ne $expectedHash) { throw 'Embedded certificate did not match the public certificate.' }
     $cancel = Run-Batch $batch '' 'N'
     if ($cancel.code -ne 2) { throw ('Batch cancellation failed: ' + $cancel.output + $cancel.error) }
 }
-$certificatePath = Join-Path $testRoot 'mcmere-play-test.cer'
 $bytes=[IO.File]::ReadAllBytes($certificatePath); $bytes[30]=$bytes[30] -bxor 1
 [IO.File]::WriteAllBytes($certificatePath,$bytes)
 if ((Run-Batch 'Install-Test-Certificate.bat' '--verify-only').code -ne 4) { throw 'A tampered certificate was accepted.' }
+[IO.File]::Delete($certificatePath)
+$batchPath = Join-Path $testRoot 'Install-Test-Certificate.bat'
+$batchText = [IO.File]::ReadAllText($batchPath)
+$header = "-----BEGIN CERTIFICATE-----`r`n"
+$position = $batchText.IndexOf($header, [StringComparison]::Ordinal) + $header.Length
+if ($position -lt $header.Length) { throw 'Embedded certificate is missing.' }
+$replacement = if ($batchText[$position] -eq 'A') { 'B' } else { 'A' }
+$batchText = $batchText.Substring(0,$position) + $replacement + $batchText.Substring($position+1)
+[IO.File]::WriteAllText($batchPath,$batchText,[Text.ASCIIEncoding]::new())
+if ((Run-Batch 'Install-Test-Certificate.bat' '--verify-only').code -ne 4) { throw 'A tampered embedded certificate was accepted.' }
 . (Join-Path $PSScriptRoot 'Verify-TestSignature.ps1')
 Assert-TestSignature -Path $SignedFilePath -Thumbprint $CertificateThumbprint
 $tampered = Join-Path $testRoot 'tampered.exe'
@@ -47,6 +60,6 @@ $rejected=$false
 try { Assert-TestSignature -Path $tampered -Thumbprint $CertificateThumbprint } catch { $rejected=$true }
 if (!$rejected) { throw 'A tampered executable was accepted.' }
 if ((Trust-State) -ne $before) { throw 'Certificate trust changed during read-only/cancellation tests.' }
-$report=[ordered]@{success=$true;validCertificateVerified=$true;installCancelled=$true;removalCancelled=$true;tamperedCertificateRejected=$true;tamperedExecutableRejected=$true;trustedStoresUnchanged=$true;actualTrustInstallationTested=$false;smartAppControlAcceptanceTested=$false}
+$report=[ordered]@{success=$true;embeddedCertificateCreated=$true;validCertificateVerified=$true;installCancelled=$true;removalCancelled=$true;tamperedCertificateRejected=$true;tamperedEmbeddedCertificateRejected=$true;tamperedExecutableRejected=$true;trustedStoresUnchanged=$true;actualTrustInstallationTested=$false;smartAppControlAcceptanceTested=$false}
 [IO.File]::WriteAllText((Join-Path $testRoot 'result.json'),($report|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
 $report|ConvertTo-Json
