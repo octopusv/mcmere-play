@@ -1,6 +1,6 @@
 # SetupとReleaseの方針
 
-SetupとZIP、署名済みアプリ更新情報はローカルで生成できる。CIのRelease workflow、公開バイナリReleaseと実ゲームでの最終確認は準備中。
+SetupとZIP、署名済みアプリ更新情報はローカルで生成できる。Windows CIはbuild・テスト・UIを検証し、PRまたは手動実行のpackage workflowはSetup・ZIPとインストーラーの検証結果を生成する。公開バイナリReleaseと実ゲームでの最終確認は準備中。
 
 ## 独立したアプリとして配布する
 
@@ -56,7 +56,7 @@ mcmere Playはmcmere本体とは別のバージョン、Setup、GitHub Release�
 
 最初のバイナリReleaseには、通信断・容量不足・同時起動・更新中の強制終了・ホワイトリスト削除・既存設定保持の試験も必要。配布APIと公開パックの準備ができていることも確認する。
 
-将来のGitHub Actionsは、PR時にbuild/test、保護されたrelease操作でpackage/sign/uploadを実行する。バージョンとpayloadの不一致や、未検証バイナリの公開を防ぐ。
+GitHub ActionsのBuild release packageはPRで検証用0.1.0を生成し、手動実行では数値バージョンを指定できる。生成物はActions artifactであり、自動的にはReleaseを公開しない。署名秘密鍵はCIへ渡さず、公開前の手順で署名済み更新情報を作成する。EXEをコード署名する場合も、最終的な署名後のファイルに対して更新情報を生成する。
 
 ## 保存先変更の検証
 

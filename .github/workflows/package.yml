@@ -1,5 +1,6 @@
 name: Build release package
 on:
+  pull_request:
   workflow_dispatch:
     inputs:
       version:
@@ -30,14 +31,25 @@ jobs:
       - name: Generate Setup and ZIP
         shell: pwsh
         env:
-          PLAY_RELEASE_VERSION: ${{ inputs.version }}
+          PLAY_RELEASE_VERSION: ${{ inputs.version || '0.1.0' }}
         run: ./scripts/Publish.ps1 -Version $env:PLAY_RELEASE_VERSION -SkipBuild
+      - name: Verify the generated installer
+        shell: pwsh
+        env:
+          PLAY_RELEASE_VERSION: ${{ inputs.version || '0.1.0' }}
+        run: ./scripts/Test-Installer.ps1 -SetupPath "./artifacts/mcmere-play-Setup-$env:PLAY_RELEASE_VERSION.exe" -DataDirectory "${{ github.workspace }}/.test-data/installer-ci"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: mcmere-play-${{ inputs.version }}-${{ github.sha }}
+          name: mcmere-play-${{ inputs.version || '0.1.0' }}-${{ github.sha }}
           path: |
             artifacts/mcmere-play-Setup-*.exe
             artifacts/mcmere-play-*-win-x64.zip
             artifacts/SHA256SUMS.txt
           retention-days: 14
           if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: installer-evidence-${{ github.sha }}
+          path: .test-data/installer-ci/evidence/
+          retention-days: 7
