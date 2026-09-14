@@ -16,7 +16,7 @@ const path = require('node:path');
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ channel: 'msedge', headless: true });
   try {
-    const page = await browser.newPage({ viewport: { width: 1080, height: 800 }, reducedMotion: 'reduce' });
+    const page = await browser.newPage({ viewport: { width: 1080, height: 800 }, deviceScaleFactor: 2, reducedMotion: 'reduce' });
     const errors = []; const calls = [];
     page.on('pageerror', error => errors.push(error.message));
     const file = (id, required) => ({ id, path: 'mods/' + id + '.jar', name: id === 'main' ? 'Cobblemon' : '推奨MOD', version: '1.0', length: 3000000, sha512: 'a'.repeat(128),
@@ -107,9 +107,17 @@ const path = require('node:path');
     await page.screenshot({ path: path.join(out, 'settings-recovery.png'), fullPage: true });
     await page.getByRole('button', { name: '保存済みの設定を復元', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('.play-app')?.dataset.ready === 'true');
+    state.settings.servers[0].name = '長い日本語サーバー名と保存先の表示確認'.repeat(8);
+    await page.reload();
+    await page.waitForFunction(() => document.querySelector('.play-app')?.dataset.ready === 'true');
+    await page.setViewportSize({ width: 540, height: 400 });
+    if (await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) throw new Error('Long-name layout overflows at 200% zoom.');
+    if (await page.locator('.play-heading h1').evaluate(element => element.getBoundingClientRect().height > parseFloat(getComputedStyle(element).lineHeight) * 2.1)) throw new Error('Long server name pushes play controls out of view.');
+    await page.screenshot({ path: path.join(out, 'long-name-200-percent.png'), fullPage: true });
+    await page.setViewportSize({ width: 1080, height: 800 });
     if (errors.length) throw new Error(errors.join('\n'));
     for (const op of ['identify', 'prepare', 'optional', 'memory', 'theme', 'recover-settings', 'check-update', 'download-update', 'queue-update', 'choose-migration', 'migrate-data']) if (!calls.includes(op)) throw new Error('Missing native operation: ' + op);
-    fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ passed: true, transport: 'synthetic native bridge', calls, errors, realGameConnectionTested: false }, null, 2));
+    fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ passed: true, transport: 'synthetic native bridge', calls, errors, zoom200PercentTested: true, realGameConnectionTested: false }, null, 2));
     console.log('Play UI checks passed.');
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exit(1); });

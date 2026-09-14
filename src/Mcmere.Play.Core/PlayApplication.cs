@@ -30,8 +30,8 @@ public sealed class PlayApplication : IDisposable
         public VerifiedDownloads Downloads { get; }
         public Connection(SavedServer server, bool development)
         {
-            _api.DefaultRequestHeaders.UserAgent.ParseAdd("mcmere-play/0.1.0");
-            _files.DefaultRequestHeaders.UserAgent.ParseAdd("mcmere-play/0.1.0");
+            _api.DefaultRequestHeaders.UserAgent.ParseAdd("mcmere-play/" + PlayVersion.Current);
+            _files.DefaultRequestHeaders.UserAgent.ParseAdd("mcmere-play/" + PlayVersion.Current);
             Client = new(_api, server.Target, server.SigningKey, keyMinimumSequence: server.KeyMinimumSequence);
             Downloads = new(_files, new DownloadPolicy(server.Target.BaseUri, development));
         }
@@ -55,11 +55,26 @@ public sealed class PlayApplication : IDisposable
     private bool _wasGameRunning;
     public event Action? Changed;
     public PlayPaths Paths => _paths;
+    public async Task<IReadOnlyList<RuntimeDiagnostic>> RuntimeDiagnosticsAsync(CancellationToken ct = default)
+    {
+        var result = new List<RuntimeDiagnostic>();
+        foreach (var (kind, artifact) in new[] { ("java", RuntimeCatalog.Java21), ("prism", RuntimeCatalog.Prism) })
+        {
+            try
+            {
+                var installation = await _runtimes.FindAsync(artifact, kind, ct);
+                result.Add(new(kind, installation?.Version, installation is not null));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or DistributionException)
+            { result.Add(new(kind, null, false, (error as DistributionException)?.Code ?? "operation_failed")); }
+        }
+        return result;
+    }
     public PlayApplication(PlayPaths paths, bool development = false, IPlayActivity? activity = null, IGameLauncher? launcher = null)
     {
         _paths = paths; _development = development; _settings = new(paths, development);
         _activity = activity ?? new ProcessActivity(paths); _launcher = launcher ?? new GameLauncher();
-        _runtimeHttp.DefaultRequestHeaders.UserAgent.ParseAdd("mcmere-play/0.1.0");
+        _runtimeHttp.DefaultRequestHeaders.UserAgent.ParseAdd("mcmere-play/" + PlayVersion.Current);
         _runtimes = new(paths, new VerifiedDownloads(_runtimeHttp, new DownloadPolicy()));
     }
     public async Task<PlayView> ViewAsync(CancellationToken ct = default)

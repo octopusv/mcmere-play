@@ -18,6 +18,7 @@ public partial class MainWindow : Window
 {
     private const string Origin = "https://app.mcmere-play.local";
     private PlayApplication _application;
+    private readonly DiagnosticLog _log;
     private AppUpdater _updates;
     private readonly DateTimeOffset _processStarted;
     private readonly CancellationTokenSource _lifetime = new();
@@ -45,6 +46,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _application = new(paths, development); _development = development; _smoke = smoke; _output = output; _pendingLink = link;
+        _log = new(paths); _log.Write(DiagnosticEvent.Started);
         _smokeUpdateLauncher = applyUpdateSmoke ? new SmokeUpdateLauncher(output + ".setup.json") : null;
         _updates = new(paths, new ProcessActivity(paths), _smokeUpdateLauncher);
         using (var own = Process.GetCurrentProcess()) _processStarted = new DateTimeOffset(own.StartTime.ToUniversalTime());
@@ -122,7 +124,7 @@ public partial class MainWindow : Window
             }
         }
         catch (OperationCanceledException) { }
-        catch (Exception error) { Post(new { type = "error", message = error.Message, code = (error as DistributionException)?.Code }); }
+        catch (Exception error) { _log.Write(DiagnosticEvent.StateFailed, (error as DistributionException)?.Code ?? "operation_failed"); Post(new { type = "error", message = error.Message, code = (error as DistributionException)?.Code }); }
         finally { _emitting = false; }
     }
     private async Task<PlayView> CurrentViewAsync() => (await _application.ViewAsync(_lifetime.Token)) with { Update = _updates.View, Migration = _migrationProgress };
@@ -219,12 +221,14 @@ public partial class MainWindow : Window
                     External(file.Source.PageUrl); break;
                 default: throw new DistributionException("unknown_operation", "対応していない操作です。");
             }
+            if (op != "state") _log.Write(DiagnosticEvent.OperationCompleted);
             Post(new { id, ok = true, value = result });
             _dirty = true; await EmitAsync();
         }
         catch (Exception error)
         {
             var code = (error as DistributionException)?.Code ?? "operation_failed";
+            _log.Write(DiagnosticEvent.OperationFailed, code);
             var message = error is DistributionException ? error.Message : "操作を完了できませんでした。";
             Post(new { id, ok = false, error = new { code, message } });
         }
@@ -239,17 +243,16 @@ public partial class MainWindow : Window
         var dialog = new SaveFileDialog { Title = "診断ログを保存", FileName = "mcmere-play-diagnostics.zip", Filter = "ZIPファイル|*.zip", OverwritePrompt = true };
         if (dialog.ShowDialog(this) != true) return null;
         var state = await _application.ViewAsync(_lifetime.Token);
-        var report = new { version = PlayVersion.Current, operatingSystem = RuntimeInformation.OSDescription, architecture = RuntimeInformation.ProcessArchitecture.ToString(),
-            servers = state.Servers.Select(server => new { server.Stage, server.ErrorCode, minecraft = server.Manifest?.MinecraftVersion,
-                neoForge = server.Manifest?.Loader.Version, java = server.Manifest?.Java.Major,
-                changes = server.Plan?.Changes.Select(item => new { item.Scope, item.Path, item.Action }).ToArray() }) };
+        var report = Diagnostics.Create(state, await _application.RuntimeDiagnosticsAsync(_lifetime.Token));
         var temporary = dialog.FileName + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             using (var zip = ZipFile.Open(temporary, ZipArchiveMode.Create))
             {
-                await using var entry = zip.CreateEntry("diagnostics.json").Open();
-                await entry.WriteAsync(DistributionJson.Bytes(report), _lifetime.Token);
+                await using (var entry = zip.CreateEntry("diagnostics.json").Open())
+                    await entry.WriteAsync(DistributionJson.Bytes(report), _lifetime.Token);
+                await using (var entry = zip.CreateEntry("events.json").Open())
+                    await entry.WriteAsync(DistributionJson.Bytes(_log.Read()), _lifetime.Token);
             }
             File.Move(temporary, dialog.FileName, true);
         }

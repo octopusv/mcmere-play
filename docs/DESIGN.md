@@ -357,7 +357,7 @@ metadataと認証応答は`Cache-Control: no-store`。tokenはAuthorizationヘ�
 
 すべて既存のadministrator権限を要求し、公開先設定の変更はownerに限定する。
 
-| 管理API | 予定するCLI |
+| 管理API | CLI |
 |---|---|
 | `GET /api/servers/{id}/distribution` | `mcmere distribution show <server>` |
 | `PUT /api/servers/{id}/distribution` | `mcmere distribution configure <server> --file <json>` |
@@ -369,7 +369,7 @@ metadataと認証応答は`Cache-Control: no-store`。tokenはAuthorizationヘ�
 | `POST .../distribution/releases` | `mcmere distribution publish <server> <candidate> --wait` |
 | `POST .../distribution/disable` | `mcmere distribution disable <server>` |
 
-これらは追加予定の契約であり、現行CLIではまだ利用できない。変更系はexpectedRevision、長期処理はIdempotency-Keyとjobsを利用する。公開版・候補の更新競合は409で再計画する。候補編集ではファイル分類、配布元、配布条件の確認記録、設定のポリシー、推奨メモリを更新できる。内容変更はcandidate hashを更新して以前の検証結果を無効化する。previewは登録済み資材から作る管理者用のテストパックであり、未解決ファイルを自動的に許可する経路にはしない。
+これらの管理API・CLIはmcmere側に実装済み。変更系はexpectedRevision、長期処理はIdempotency-Keyとjobsを利用する。公開版・候補の更新競合は409で再計画する。候補編集ではファイル分類、配布元、配布条件の確認記録、設定のポリシー、推奨メモリを更新できる。内容変更はcandidate hashを更新して以前の検証結果を無効化する。previewは登録済み資材から作る管理者用のテストパックであり、未解決ファイルを自動的に許可する経路にはしない。
 
 ## 12. 配布・更新・診断
 
@@ -380,7 +380,7 @@ metadataと認証応答は`Cache-Control: no-store`。tokenはAuthorizationヘ�
 - データ保存先の変更はPrismとゲーム終了後にコピー・検証してから参照を切り替える。元データの削除は成功後に別操作とする。
 - アプリの設置先とデータ保存先を分離し、設置先のdata-location.jsonから検証済みの移行先を解決する。移行対象はPlay設定、runtimes、state、cache、staging、backups、logsと、Prismのinstances・assets・libraries・meta・icons。Prism全体設定と認証ファイルは移行せず、確認画面で再ログインを案内する。既存セーブとゲーム個人設定はコピー後も元に残す。
 - アンインストールはアプリを削除し、ゲームデータは既定で残す。全データ削除を選ぶ場合だけ保存先と影響を表示する。
-- ログはローカル保存、最大10ファイル×5MiB。診断書き出しは利用者操作で行い、送信は自動化しない。
+- ログは設置先のdiagnostics/logsにローカル保存し、最大10ファイル×5MiB。移行中も追記できるよう設置先に残す。診断書き出しは利用者操作で行い、送信は自動化しない。
 - 診断にはアプリ版、OS/CPU、Java版、Prism版、匿名化したファイル差分、エラーcodeを含める。token、Prism認証ファイル、ユーザーディレクトリ名、ホワイトリスト一覧を含めない。
 
 ## 13. 実装順と完了条件

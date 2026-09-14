@@ -102,7 +102,7 @@ export default function App() {
       <div className="sidebar-heading">マイサーバー</div>
       <nav className="server-list" aria-label="サーバー選択">{view?.settings.servers.map(item => <button key={item.id} className={"server-item " + (server?.id === item.id && !applicationSettings ? "selected" : "")}
         onClick={() => { void act("select", { serverId: item.id }); setApplicationSettings(false); }}>
-        <Puzzle size={19} /><span className="server-label"><strong>{item.name}</strong><small>{item.playerName ?? "名前を入力"}</small></span>
+        <Puzzle size={19} /><span className="server-label"><strong title={item.name}>{item.name}</strong><small>{item.playerName ?? "名前を入力"}</small></span>
       </button>)}</nav>
       <button className="sidebar-link" onClick={() => { setUrl(""); setDiscovery(null); setDialog("add"); setError(null); }}><Plus size={16} />サーバーを追加</button>
       <div className="sidebar-spacer" />
@@ -136,7 +136,7 @@ export default function App() {
       </div><ErrorText message={error} />{notice && <div className="notice" role="status">{notice}</div>}</> :
       !server ? <section className="play-empty"><h1>最初のサーバーを追加</h1><p>管理者から届いた配布ページを登録して、プレイ環境を準備しましょう。</p>
         <button className="primary" onClick={() => { setDialog("add"); setError(null); }}><Plus size={16} />サーバーを追加</button></section> :
-      <><header className="play-heading"><div><h1>{server.name}</h1><div className="subtitle"><span className={"dot " + (state?.status?.gameState === "online" ? "online" : "")} />
+      <><header className="play-heading"><div><h1 title={server.name}>{server.name}</h1><div className="subtitle"><span className={"dot " + (state?.status?.gameState === "online" ? "online" : "")} />
         {state?.status?.gameState === "online" ? "オンライン" : state?.status?.gameState === "offline" ? "停止中" : "状態を確認"}
         {state?.manifest && <span>· 配布版 {state.manifest.displayVersion}</span>}</div></div>
         <button className="play-name" disabled={busy} onClick={nameDialog}><UserRound size={15} />{server.playerName ?? "名前を入力"}<ChevronDown size={14} /></button></header>
