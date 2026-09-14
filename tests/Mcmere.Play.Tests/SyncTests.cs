@@ -96,13 +96,64 @@ public sealed class SyncTests : IDisposable
     }
 
     [Fact]
-    public async Task UnknownModsRequireExplicitQuarantineAndRemainAvailableInBackup()
+    public async Task PersonalModsArePreservedWhenTheManagedPackIsAlreadyCurrent()
+    {
+        var a = await Mod("a", "required"); var manifest = Pack(1, a);
+        var applied = await Sync(manifest);
+        await File.WriteAllTextAsync(Game("mods/personal.jar"), "personal mod");
+        var plan = await _engine.PlanAsync(_instance, manifest, _java, 4096);
+        Assert.Equal(new[] { "mods/personal.jar" }, plan.UnknownMods);
+        Assert.Empty(plan.Changes);
+        var calls = _provider.Calls;
+        Assert.Equal(applied.TransactionId, (await Sync(manifest)).TransactionId);
+        Assert.Equal(calls, _provider.Calls);
+        Assert.Equal("personal mod", await File.ReadAllTextAsync(Game("mods/personal.jar")));
+    }
+
+    [Fact]
+    public async Task PersonalModsSurviveInitialSetupManagedUpdatesAndRepairs()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Game("mods/personal.jar"))!);
+        await File.WriteAllTextAsync(Game("mods/personal.jar"), "personal mod");
+        var a = await Mod("a", "first"); await Sync(Pack(1, a));
+        var b = await Mod("b", "second"); var next = Pack(2, b);
+        await Sync(next);
+        await File.WriteAllTextAsync(Game(b.Path), "damaged");
+        await Sync(next);
+        Assert.False(File.Exists(Game(a.Path)));
+        Assert.Equal("second", await File.ReadAllTextAsync(Game(b.Path)));
+        Assert.Equal("personal mod", await File.ReadAllTextAsync(Game("mods/personal.jar")));
+        Assert.DoesNotContain(PlayFiles.Files(_paths.Backups), path => path.EndsWith("personal.jar", StringComparison.Ordinal));
+        Assert.Equal(new[] { "mods/personal.jar" }, (await _engine.InspectAsync(_instance, next, _java, 4096)).UnknownMods);
+    }
+
+    [Fact]
+    public async Task RecoveryPreservesPersonalModsIncludingEditsMadeAfterInterruption()
+    {
+        var a = await Mod("a", "old"); await Sync(Pack(1, a));
+        await File.WriteAllTextAsync(Game("mods/personal.jar"), "personal mod");
+        var next = Pack(2, await Mod("a", "new"));
+        using var cancel = new CancellationTokenSource();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Sync(next, new ImmediateProgress(update =>
+        { if (update.Stage == "applying") cancel.Cancel(); }), cancel.Token));
+        await File.WriteAllTextAsync(Game("mods/personal.jar"), "updated personal mod");
+        await _engine.RecoverAsync(_instance);
+        Assert.Equal("old", await File.ReadAllTextAsync(Game(a.Path)));
+        Assert.Equal("updated personal mod", await File.ReadAllTextAsync(Game("mods/personal.jar")));
+        await Sync(next);
+        Assert.Equal("new", await File.ReadAllTextAsync(Game(a.Path)));
+        Assert.Equal("updated personal mod", await File.ReadAllTextAsync(Game("mods/personal.jar")));
+    }
+
+    [Fact]
+    public async Task PersonalModsCanBeExplicitlyQuarantinedAndRemainAvailableInBackup()
     {
         var a = await Mod("a", "required"); await Sync(Pack(1, a));
         await File.WriteAllTextAsync(Game("mods/personal.jar"), "personal mod");
         var plan = await _engine.PlanAsync(_instance, Pack(1, a), _java, 4096);
         Assert.Single(plan.UnknownMods);
-        Assert.Equal("unknown_mods", (await Assert.ThrowsAsync<DistributionException>(() => Sync(Pack(1, a)))).Code);
+        await Sync(Pack(1, a));
+        Assert.Equal("personal mod", await File.ReadAllTextAsync(Game("mods/personal.jar")));
         await _engine.SynchronizeAsync(_instance, Pack(1, a), _java, 4096, quarantineUnknown: true);
         Assert.False(File.Exists(Game("mods/personal.jar")));
         Assert.Contains(PlayFiles.Files(_paths.Backups), path => path.EndsWith("personal.jar", StringComparison.Ordinal));

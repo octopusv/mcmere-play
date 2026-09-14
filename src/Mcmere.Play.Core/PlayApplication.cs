@@ -242,7 +242,6 @@ public sealed class PlayApplication : IDisposable
             plan = await engine.InspectAsync(id, fetched.Manifest, java.Executable, server.MemoryMiB, choices, quarantineUnknown, token);
         }
         Set(id, Current(id) with { Plan = plan, JavaReady = true, PrismReady = true, Directory = _paths.Game(id), Stage = "preparing" });
-        if (plan.UnknownMods.Count > 0 && !quarantineUnknown) throw new DistributionException("unknown_mods", "追加されたMODがあります。退避して標準構成に戻すか確認してください。");
         var applied = await engine.AppliedAsync(id, token);
         if (plan.Changes.Count > 0 || applied?.Manifest.ReleaseId != fetched.Manifest.ReleaseId)
         {
@@ -254,7 +253,8 @@ public sealed class PlayApplication : IDisposable
                 }), token);
         }
         _canCancel = true;
-        Set(id, Current(id) with { Stage = server.GameObserved ? "ready" : "prismSetup", Plan = plan with { Changes = [], UnknownMods = [] }, Received = 0, Total = 0, CurrentFile = null });
+        Set(id, Current(id) with { Stage = server.GameObserved ? "ready" : "prismSetup",
+            Plan = plan with { Changes = [], UnknownMods = quarantineUnknown ? [] : plan.UnknownMods }, Received = 0, Total = 0, CurrentFile = null });
         if (launch) await LaunchCoreAsync(id, prism, token);
     }, ct);
     public Task LaunchAsync(string id, CancellationToken ct = default) => PrepareAsync(id, true, ct: ct);
@@ -293,7 +293,7 @@ public sealed class PlayApplication : IDisposable
         var plan = await engine.InspectAsync(id, fetched.Manifest, javaPath, server.MemoryMiB, PlaySettingsStore.Selected(fetched.Manifest, server), ct: ct);
         if (java is not null) await RuntimeManager.InspectJavaAsync(java.Executable, fetched.Manifest.Java.Major, ct);
         Set(id, Current(id) with { JavaReady = java is not null, PrismReady = prism is not null, Plan = plan, Directory = _paths.Game(id),
-            Stage = java is null || prism is null ? "setup" : plan.Changes.Count > 0 || plan.UnknownMods.Count > 0 ? "update" : server.GameObserved ? "ready" : "prismSetup" });
+            Stage = java is null || prism is null ? "setup" : plan.Changes.Count > 0 ? "update" : server.GameObserved ? "ready" : "prismSetup" });
     }
     private async Task<FetchedRelease> FetchAsync(string id, CancellationToken ct)
     {
