@@ -2,11 +2,11 @@
 
 **サーバーに合う環境を、準備して参加。**
 
-mcmere Playは、[mcmere](https://github.com/octopusv/mcmere)で管理するMinecraft Javaサーバー向けのWindowsクライアントです。サーバーが公開した構成にJava・NeoForge・MODを揃え、Prism Launcherからゲームを起動するアプリを開発します。
+mcmere Playは、[mcmere](https://github.com/octopusv/mcmere)で管理するMinecraft Javaサーバー向けのWindowsクライアントです。サーバーが公開した構成にJava・NeoForge・MODを揃え、Prism Launcherからゲームを起動します。
 
-> 現在は開発中です。Windowsアプリ、参加者UI、配布API接続、差分同期・復旧、専用Java・Prismの導入、SetupとZIPの生成、署名済み情報によるアプリ更新を実装しています。配布用Releaseは準備中で、実際のゲーム接続を含む受け入れ確認はまだ完了していません。
+> [Windows用の初回プレビュー版 v0.1.0](https://github.com/octopusv/mcmere-play/releases/tag/v0.1.0)を公開しています。SetupまたはZIPを取得してください。管理側はmcmere 0.1.3以降を使用し、クライアントパックごとのゲーム接続は管理者が確認してから公開してください。EXEは未署名で、アプリ更新情報には署名を付けています。
 
-## 予定している使い方
+## 使い方
 
 1. 配布ページからmcmere Playをインストールする。
 2. サーバーのホワイトリストに登録されたMinecraft名を入力する。
