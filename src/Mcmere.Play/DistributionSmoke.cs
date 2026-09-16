@@ -78,11 +78,24 @@ public partial class MainWindow
             var path = PlayFiles.Child(_application.Paths.Game(saved.Id), file.Path);
             if (await PlayFiles.Sha512Async(path, _lifetime.Token) != file.Sha512) throw new InvalidOperationException("配布ファイルが一致しません: " + file.Id);
         }
+        if (manifest.ResourcePacks.Count > 0)
+        {
+            var options = ResourcePackOptions.Read(await File.ReadAllBytesAsync(PlayFiles.Child(_application.Paths.Game(saved.Id), "options.txt"), _lifetime.Token));
+            var selected = JsonSerializer.Deserialize<string[]>(options.ResourcePacks ?? "[]")!;
+            var index = -1;
+            foreach (var pack in manifest.ResourcePacks.Reverse())
+            {
+                var id = "file/" + manifest.Files.Single(file => file.Id == pack.FileId).Path["resourcepacks/".Length..];
+                var next = Array.IndexOf(selected, id);
+                if (next <= index) throw new InvalidOperationException("リソースパックの選択・優先順位が一致しません。");
+                index = next;
+            }
+        }
         var profile = await File.ReadAllTextAsync(PlayFiles.Child(_application.Paths.Instance(saved.Id), "mmc-pack.json"), _lifetime.Token);
         if (!PrismProfile.PackMatches(profile, manifest)) throw new InvalidOperationException("NeoForgeの構成が一致しません。");
         var persisted = view.Settings.Servers!.Single(server => server.Id == saved.Id);
         return new { nativeDistributionTested = true, manifest.ReleaseId, manifest.Sequence, filesVerified = manifest.Files.Count,
-            javaVerified = state.JavaReady, prismVerified = state.PrismReady, neoForgeProfileVerified = true,
+            javaVerified = state.JavaReady, prismVerified = state.PrismReady, neoForgeProfileVerified = true, resourcePackActivationVerified = manifest.ResourcePacks.Count > 0,
             keyId = persisted.SigningKey.KeyId, persisted.KeyMinimumSequence, persisted.HighestSequence, realGameConnectionTested = false };
     }
 }

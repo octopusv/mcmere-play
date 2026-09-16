@@ -1,5 +1,13 @@
 # mcmere Play — クライアント配布の設計
 
+## リソースパック管理の追加
+
+manifest schema 2では、resourcePacksの高優先順リストとpackPairsの資材hashを検証する。schema 1は引き続き読み取れる。未知の機能を要求するmanifestはファイル変更前に拒否する。
+
+SyncEngineはZIPとoptions.txt内のパック選択を一つのjournalに記録し、commit前の中断では管理対象のファイルと選択だけを復旧する。音量などの他の設定は保持する。旧来の「options.txtはユーザー所有」に対する例外はresourcePacksとincompatibleResourcePacks内の管理IDだけであり、manifestでoptions.txt全体を配布することはできない。
+
+「構成」画面にパックと優先順位を表示する。必須を維持し、推奨は利用者が選択できる。起動直前のlaunch-checkに対応機能を伝える。これはゲーム接続時の強制検証ではない。
+
 設計版: 1 / 2026-09-14 / 実装仕様
 
 ## 1. 決定した方針

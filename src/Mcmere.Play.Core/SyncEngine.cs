@@ -6,7 +6,7 @@ namespace Mcmere.Play.Core;
 
 public enum SyncAction { Add, Replace, Remove, Quarantine }
 public sealed record SyncItem(string Scope, string Path, SyncAction Action, string? BeforeHash, long BeforeLength,
-    string? AfterHash, long AfterLength, string? FileId);
+    string? AfterHash, long AfterLength, string? FileId, PackOptionChange? Options = null);
 public sealed record SyncPlan(string Id, string InstanceId, string ReleaseId, IReadOnlyList<SyncItem> Changes,
     IReadOnlyList<string> UnknownMods, long RequiredFreeBytes, IReadOnlyList<string> SelectedIds);
 public sealed record SyncProgress(string Stage, int Completed, int Total);
@@ -34,6 +34,7 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
     {
         "game" => PlayFiles.Child(paths.Game(instanceId), operation.Path),
         "profile" when operation.Path is "instance.cfg" or "mmc-pack.json" => PlayFiles.Child(paths.Instance(instanceId), operation.Path),
+        "resourcePackOptions" when operation.Path == "options.txt" => PlayFiles.Child(paths.Game(instanceId), "options.txt"),
         _ => throw new DistributionException("invalid_journal", "更新記録の対象が不正です。")
     };
 
@@ -87,6 +88,12 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
             var path = PlayFiles.Child(paths.Game(instanceId), file.Path);
             if (file.UpdatePolicy == FileUpdatePolicy.Seed && File.Exists(path)) continue;
             var before = await SnapshotAsync(path, ct);
+            if (manifest.ResourcePacks.Any(item => item.FileId == file.Id) && before.Hash is not null)
+            {
+                if (before.Hash != file.Sha512 && !oldFiles.Any(old => old.Path.Equals(file.Path, StringComparison.OrdinalIgnoreCase)))
+                    throw new DistributionException("resource_pack_conflict", "配置先に未管理のリソースパックがあります。フォルダーで確認してください。");
+                if (before.Hash == file.Sha512) PackArchive.RequireCompatible(await PackArchive.InspectAsync(path, ct), manifest.MinecraftVersion, false, true);
+            }
             if (before.Hash != file.Sha512)
                 changes.Add(new("game", file.Path, before.Hash is null ? SyncAction.Add : SyncAction.Replace, before.Hash, before.Length, file.Sha512, file.Length, file.Id));
         }
@@ -121,10 +128,26 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
             var hash = Convert.ToHexString(SHA512.HashData(entry.Value)).ToLowerInvariant();
             if (before.Hash != hash) changes.Add(new("profile", entry.Key, before.Hash is null ? SyncAction.Add : SyncAction.Replace, before.Hash, before.Length, hash, entry.Value.Length, null));
         }
+        var generated = profiles.ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
+        if (manifest.SchemaVersion == 2 || previous?.Manifest.SchemaVersion == 2)
+        {
+            var path = PlayFiles.Child(paths.Game(instanceId), "options.txt");
+            var before = await SnapshotAsync(path, ct);
+            if (before.Length > 2 * 1024 * 1024) throw new DistributionException("options_conflict", "options.txtのサイズが上限を超えています。");
+            var bytes = before.Hash is null ? [] : await File.ReadAllBytesAsync(path, ct);
+            var patch = ResourcePackOptions.Plan(bytes, manifest, previous?.Manifest, selected);
+            if (patch.Before != patch.After)
+            {
+                var next = ResourcePackOptions.Write(bytes, patch.After);
+                generated["options.txt"] = next;
+                changes.Add(new("resourcePackOptions", "options.txt", before.Hash is null ? SyncAction.Add : SyncAction.Replace,
+                    before.Hash, before.Length, Convert.ToHexString(SHA512.HashData(next)).ToLowerInvariant(), next.Length, null, patch));
+            }
+        }
         var ids = selected.Select(file => file.Id).Order(StringComparer.Ordinal).ToArray();
         var id = Convert.ToHexString(SHA256.HashData(DistributionJson.Bytes(new { manifest.ReleaseId, manifest.Sequence, Changes = changes, Selected = ids, unknown }))).ToLowerInvariant();
         var space = checked(changes.Sum(item => checked(item.AfterLength * 2 + item.BeforeLength)) + (changes.Count > 0 ? 256L * 1024 * 1024 : 8L * 1024 * 1024));
-        return (new(id, instanceId, manifest.ReleaseId, changes, unknown, space, ids), profiles);
+        return (new(id, instanceId, manifest.ReleaseId, changes, unknown, space, ids), generated);
     }
 
     public async Task<AppliedPack> SynchronizeAsync(string instanceId, PackManifest manifest, string javaPath, int memoryMiB,
@@ -160,7 +183,7 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
                 {
                     var target = PlayFiles.Child(staging, operation.Scope + "/" + operation.Path);
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                    if (operation.Scope == "profile") await File.WriteAllBytesAsync(target, prepared.Profiles[operation.Path], ct);
+                    if (operation.Scope is "profile" or "resourcePackOptions") await File.WriteAllBytesAsync(target, prepared.Profiles[operation.Path], ct);
                     else
                     {
                         var file = manifest.Files.Single(file => file.Id == operation.FileId);
@@ -170,6 +193,8 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
                     }
                     if (new FileInfo(target).Length != operation.AfterLength || await PlayFiles.Sha512Async(target, ct) != operation.AfterHash)
                         throw new DistributionException("download_corrupt", "準備したファイルのハッシュが一致しません。");
+                    if (manifest.ResourcePacks.Any(item => item.FileId == operation.FileId))
+                        PackArchive.RequireCompatible(await PackArchive.InspectAsync(target, ct), manifest.MinecraftVersion, false, true);
                     progress?.Report(new("preparing", Interlocked.Increment(ref completed), plan.Changes.Count));
                 }
                 finally { parallel.Release(); }
@@ -237,6 +262,16 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
             foreach (var operation in journal.Operations.Reverse())
             {
                 var destination = Resolve(instanceId, operation);
+                if (operation.Options is { } options)
+                {
+                    if (File.Exists(destination) && new FileInfo(destination).Length > 2 * 1024 * 1024)
+                        throw new DistributionException("options_conflict", "個人設定が大きすぎるため復旧を保留しました。");
+                    var bytes = File.Exists(destination) ? await File.ReadAllBytesAsync(destination, ct) : [];
+                    var restored = ResourcePackOptions.Restore(bytes, options);
+                    if (restored.Length == 0 && operation.BeforeHash is null) { if (File.Exists(destination)) File.Delete(destination); }
+                    else await PlayFiles.WriteAtomicAsync(destination, restored, ct);
+                    continue;
+                }
                 var current = await SnapshotAsync(destination, ct);
                 if (current.Hash == operation.BeforeHash) continue;
                 if (current.Hash != operation.AfterHash) throw new DistributionException("recovery_conflict", "更新後に変更されたファイルがあります。自動復旧を保留しました。");
@@ -290,8 +325,12 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
         {
             ManifestValidation.RelativePath(operation.Path);
             if (operation.Scope == "game" && operation.Path.Split('/')[0] is not ("mods" or "config" or "defaultconfigs" or "resourcepacks" or "shaderpacks") ||
-                operation.Scope == "profile" && operation.Path is not ("instance.cfg" or "mmc-pack.json") || operation.Scope is not ("game" or "profile") ||
+                operation.Scope == "profile" && operation.Path is not ("instance.cfg" or "mmc-pack.json") ||
+                operation.Scope == "resourcePackOptions" && (operation.Path != "options.txt" || operation.Options is null) ||
+                operation.Scope is not ("game" or "profile" or "resourcePackOptions") ||
+                operation.Scope != "resourcePackOptions" && operation.Options is not null ||
                 !targets.Add(operation.Scope + "/" + operation.Path)) throw new DistributionException("invalid_journal", "更新記録の保存先が不正です。");
+            if (operation.Options is not null) ResourcePackOptions.Validate(operation.Options);
             if (operation.BeforeHash is not null) ManifestValidation.Hash(operation.BeforeHash, 128);
             if (operation.AfterHash is not null) ManifestValidation.Hash(operation.AfterHash, 128);
             if (operation.BeforeHash is null && operation.AfterHash is null) throw new DistributionException("invalid_journal", "更新記録にファイル情報がありません。");

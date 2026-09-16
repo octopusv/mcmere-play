@@ -138,7 +138,7 @@ export default function App() {
         {state?.status?.gameState === "online" ? "オンライン" : state?.status?.gameState === "offline" ? "停止中" : "状態を確認"}
         {state?.manifest && <span>· 配布版 {state.manifest.displayVersion}</span>}</div></div>
         <button className="play-name" disabled={busy} onClick={nameDialog}><UserRound size={15} />{server.playerName ?? "名前を入力"}<ChevronDown size={14} /></button></header>
-        <div className="tabs" role="tablist" aria-label="サーバーの詳細">{[["overview", "概要"], ["mods", "MOD"], ["history", "更新履歴"], ["settings", "設定"]].map(([id, label]) =>
+        <div className="tabs" role="tablist" aria-label="サーバーの詳細">{[["overview", "概要"], ["mods", "構成"], ["history", "更新履歴"], ["settings", "設定"]].map(([id, label]) =>
           <button role="tab" key={id} aria-selected={tab === id} onClick={() => void chooseTab(id)}>{label}</button>)}</div>
         <ErrorText message={error ?? state?.error} />{notice && <div className="notice" role="status">{notice}</div>}
         {tab === "overview" && <>
@@ -153,11 +153,13 @@ export default function App() {
           <Environment icon={<Package size={17} />} name="Minecraft" version={state?.manifest?.minecraftVersion} status={server.gameObserved ? "構成を確認" : "初回起動時に取得"} />
           <Environment icon={<Puzzle size={17} />} name="NeoForge" version={state?.manifest?.loader.version} status={server.gameObserved ? "構成を確認" : "初回起動時に取得"} />
           <Environment icon={<Coffee size={17} />} name="Java" version={state?.manifest ? state.manifest.java.major + " · 64bit" : undefined} status={state?.javaReady ? "確認済み" : "未導入"} />
-          <Environment icon={<Package size={17} />} name="MOD" version={state?.manifest ? selected.size + "個" : undefined} status={state?.plan ? state.plan.changes.filter(item => item.scope === "game").length ? "更新が必要" : "確認済み" : "未確認"} />
+          <Environment icon={<Package size={17} />} name="MOD・パック" version={state?.manifest ? selected.size + "個" : undefined} status={state?.plan ? state.plan.changes.filter(item => item.scope === "game" || item.scope === "resourcePackOptions").length ? "更新が必要" : "確認済み" : "未確認"} />
           <div className="play-footer-note"><FolderOpen size={14} />サーバー専用の環境 · 個人設定とセーブを保持</div>
         </>}
-        {tab === "mods" && (state?.manifest ? <><div className="play-section-heading"><h2>このサーバーのMODと設定</h2><button disabled={busy} onClick={() => void act("choose-reuse").then(value => { if (value) setNotice("選択したフォルダーから、一致するファイルを再利用します。"); })}><FolderOpen size={15} />手元のMODを再利用</button></div>
+        {tab === "mods" && (state?.manifest ? <><div className="play-section-heading"><h2>このサーバーのMOD・パックと設定</h2><button disabled={busy} onClick={() => void act("choose-reuse").then(value => { if (value) setNotice("選択したフォルダーから、一致するファイルを再利用します。"); })}><FolderOpen size={15} />手元のMODを再利用</button></div>
+          {(state.manifest.resourcePacks?.length ?? 0) > 0 && <p>準備時に必要なリソースパックを有効化し、サーバー指定の優先順へ揃えます。画面・音量・操作の設定は保持します。</p>}
           <div className="item-list">{state.manifest.files.map(file => <div className="list-item" key={file.id}><span className="item-symbol"><Package size={20} /></span><div className="item-main"><strong>{file.name}</strong><small>{file.version} · {size(file.length)}</small>
+            {file.path.startsWith("resourcepacks/") && <small>リソースパック · 優先順位 {(state.manifest!.resourcePacks?.findIndex(item => item.fileId === file.id) ?? -1) + 1 || "手動"} · {selected.has(file.id) ? "準備時に有効化" : "未選択"}</small>}
             <small>{required.has(file.id) ? "参加に必要" : "推奨"} · {state.plan?.changes.some(item => item.path === file.path) ? "準備が必要" : state.plan ? "確認済み" : "未確認"}</small>
             {file.source.kind === "manual" && <div className="actions"><button onClick={() => void act("manual-page", { serverId: server.id, fileId: file.id })}>配布ページを開く</button><button disabled={busy} onClick={() => void act("import-file", { serverId: server.id, fileId: file.id })}>ファイルを取り込む</button></div>}</div>
             <label className="play-check"><input type="checkbox" aria-label={file.name + "を含める"} checked={selected.has(file.id)} disabled={busy || required.has(file.id)} onChange={event => void act("optional", { serverId: server.id, fileId: file.id, enabled: event.target.checked })} />{required.has(file.id) ? "必須" : "含める"}</label></div>)}</div>

@@ -1,0 +1,93 @@
+@echo off
+setlocal DisableDelayedExpansion
+set "CERT=%~dp0mcmere-play-test.cer"
+set "THUMBPRINT=@THUMBPRINT@"
+set "EXPECTED=@SHA256@"
+set "MODE=@MODE@"
+set "CERTUTIL=%SystemRoot%\System32\certutil.exe"
+set "ACTUAL="
+if exist "%CERT%" goto :verify_certificate
+"%CERTUTIL%" -decode "%~f0" "%CERT%" >nul 2>&1
+if errorlevel 1 goto :invalid
+:verify_certificate
+pushd "%~dp0" >nul 2>&1
+if errorlevel 1 goto :invalid
+for /f "skip=1 delims=" %%H in ('"%CERTUTIL%" -hashfile mcmere-play-test.cer SHA256 2^>nul') do if not defined ACTUAL set "ACTUAL=%%H"
+popd
+set "ACTUAL=%ACTUAL: =%"
+if /i not "%ACTUAL%"=="%EXPECTED%" goto :invalid
+echo mcmere Play - SELF-SIGNED TEST CERTIFICATE
+echo Certificate: @SUBJECT@
+echo Thumbprint: %THUMBPRINT%
+echo Expires UTC: @EXPIRES@
+echo Scope: CURRENT USER only, Root and TrustedPublisher stores.
+echo This is not certification by a trusted certificate authority.
+echo Smart App Control may still block the application.
+echo Defender, Smart App Control and execution-policy settings are not changed.
+if /i "%~1"=="--verify-only" exit /b 0
+if /i "%MODE%"=="remove" goto :remove
+echo.
+echo This trusts this certificate for code signing, including other code signed with its key.
+echo Only continue on a personal test PC when you trust this download.
+%SystemRoot%\System32\choice.exe /C NY /N /M "Register this test certificate? [N/Y]: "
+if errorlevel 3 goto :cancel
+if errorlevel 2 goto :install
+goto :cancel
+:install
+set "ROOT_ADDED=0"
+"%CERTUTIL%" -user -store Root "%THUMBPRINT%" >nul 2>&1
+if not errorlevel 1 goto :publisher
+"%CERTUTIL%" -user -addstore Root "%CERT%"
+if errorlevel 1 goto :failed
+set "ROOT_ADDED=1"
+:publisher
+"%CERTUTIL%" -user -store TrustedPublisher "%THUMBPRINT%" >nul 2>&1
+if not errorlevel 1 goto :installed
+"%CERTUTIL%" -user -addstore TrustedPublisher "%CERT%"
+if errorlevel 1 goto :rollback
+:installed
+"%CERTUTIL%" -user -store Root "%THUMBPRINT%" >nul 2>&1
+if errorlevel 1 goto :failed
+"%CERTUTIL%" -user -store TrustedPublisher "%THUMBPRINT%" >nul 2>&1
+if errorlevel 1 goto :failed
+echo Test certificate registered. Run the Setup in this folder.
+echo To remove this trust later, run Remove-Test-Certificate.bat.
+pause
+exit /b 0
+:rollback
+if "%ROOT_ADDED%"=="1" "%CERTUTIL%" -user -delstore Root "%THUMBPRINT%"
+goto :failed
+:remove
+echo.
+echo This removes only the certificate shown above from both CURRENT USER stores.
+%SystemRoot%\System32\choice.exe /C NY /N /M "Remove this test certificate? [N/Y]: "
+if errorlevel 3 goto :cancel
+if not errorlevel 2 goto :cancel
+"%CERTUTIL%" -user -store TrustedPublisher "%THUMBPRINT%" >nul 2>&1
+if errorlevel 1 goto :remove_root
+"%CERTUTIL%" -user -delstore TrustedPublisher "%THUMBPRINT%"
+if errorlevel 1 goto :failed
+:remove_root
+"%CERTUTIL%" -user -store Root "%THUMBPRINT%" >nul 2>&1
+if errorlevel 1 goto :removed
+"%CERTUTIL%" -user -delstore Root "%THUMBPRINT%"
+if errorlevel 1 goto :failed
+:removed
+echo Test certificate trust removed. Application files were not deleted.
+pause
+exit /b 0
+:cancel
+echo Cancelled. Certificate stores were not changed.
+exit /b 2
+:invalid
+echo Certificate missing or SHA256 mismatch. No certificate was registered.
+if /i "%~1"=="--verify-only" exit /b 4
+pause
+exit /b 4
+:failed
+echo Certificate operation failed. Review the message above.
+echo Use Remove-Test-Certificate.bat to remove this exact certificate if needed.
+pause
+exit /b 5
+
+@PUBLICCERTIFICATE@

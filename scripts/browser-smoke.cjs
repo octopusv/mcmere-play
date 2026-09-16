@@ -42,7 +42,7 @@ const path = require('node:path');
         if (request.body.name !== 'PlayerName') return { id: request.id, ok: false, error: { code: 'name_not_listed', message: 'ホワイトリストで名前を確認できません。' } };
         state.settings.servers[0].playerName = 'PlayerName';
         Object.assign(row, { stage: 'update', javaReady: true, prismReady: true, status: { gameState: 'online', compatibilityState: 'matched' },
-          manifest: { releaseId: 'r', sequence: 1, serverName: 'Example server', displayVersion: '1', changelog: '検証用の構成', minecraftVersion: '1.21.1', loader: { version: '21.1.250' }, java: { major: 21 }, files: [file('main', true), file('optional', false)] },
+          manifest: { releaseId: 'r', sequence: 1, serverName: 'Example server', displayVersion: '1', changelog: '検証用の構成', minecraftVersion: '1.21.1', loader: { version: '21.1.250' }, java: { major: 21 }, files: [file('main', true), file('optional', false), { ...file('resources', true), name: 'Required resource pack', path: 'resourcepacks/example.zip', modIds: [] }], resourcePacks: [{ bindingId: 'example', fileId: 'resources' }] },
           plan: { changes: [{ scope: 'game', path: 'mods/main.jar', action: 'add' }], unknownMods: [], requiredFreeBytes: 300000000, selectedIds: ['main', 'optional'] } });
       }
       if (request.op === 'prepare') { row.stage = 'ready'; row.plan.changes = []; if (request.body.quarantine) row.plan.unknownMods = []; }
@@ -81,7 +81,9 @@ const path = require('node:path');
     await page.getByRole('button', { name: '確認して修復', exact: true }).click();
     const repair = requests.filter(request => request.op === 'prepare').at(-1);
     if (repair.body.launch || repair.body.quarantine) throw new Error('Repair did not preserve personal mods.');
-    await page.getByRole('tab', { name: 'MOD', exact: true }).click();
+    await page.getByRole('tab', { name: '構成', exact: true }).click();
+    if (await page.getByLabel('Required resource packを含める').isEnabled()) throw new Error('Required resource pack could be disabled.');
+    await page.getByText(/リソースパック · 優先順位 1/).waitFor();
     await page.getByText('mods/personal-map.jar', { exact: true }).waitFor();
     await page.getByText('mods/personal-recipe.jar', { exact: true }).waitFor();
     await page.screenshot({ path: path.join(out, 'personal-mods.png'), fullPage: true });

@@ -58,6 +58,11 @@ public sealed record LoaderRequirement(string Kind, string Version);
 public sealed record PackManifest
 {
     public int SchemaVersion { get; init; } = 1;
+    public int FingerprintVersion { get; init; } = 1;
+    public string? DeploymentId { get; init; }
+    public IReadOnlyList<string> RequiredFeatures { get; init; } = [];
+    public IReadOnlyList<ResourcePackSelection> ResourcePacks { get; init; } = [];
+    public IReadOnlyList<PackPair> PackPairs { get; init; } = [];
     public required string ReleaseId { get; init; }
     public long Sequence { get; init; }
     public required string ServerPublicId { get; init; }
@@ -77,14 +82,18 @@ public sealed record PackManifest
     public IReadOnlyList<PackFile> Files { get; init; } = [];
 }
 
+public sealed record ResourcePackSelection(string BindingId, string FileId);
+public sealed record PackPair(string BindingId, string Mode, string ServerArtifactSha512, string ClientFileId);
+
 public sealed record SignedManifest(string KeyId, string Payload, string Sha256, string Signature);
 public sealed record DistributionKey(string KeyId, string PublicKey);
-public sealed record ServerInfo(string PublicId, string Name, int SchemaVersion, DistributionKey SigningKey, IReadOnlyList<SignedKeyTransition>? KeyTransitions = null);
+public sealed record ServerInfo(string PublicId, string Name, int SchemaVersion, DistributionKey SigningKey, IReadOnlyList<SignedKeyTransition>? KeyTransitions = null,
+    IReadOnlyList<int>? SupportedManifestSchemas = null, int RequiredManifestSchema = 1);
 public sealed record NameRequest(string PlayerName);
 public sealed record DistributionSession(string PlayerName, string SessionToken, DateTimeOffset ExpiresAt, ServerInfo Server);
 public sealed record ReleaseStatus(string ReleaseId, long Sequence, string DistributionState, string GameState,
     string CompatibilityState, DateTimeOffset ObservedAt);
-public sealed record LaunchCheckRequest(string ReleaseId);
+public sealed record LaunchCheckRequest(string ReleaseId, IReadOnlyList<string>? SupportedFeatures = null);
 public sealed record LaunchCheckResult(bool Allowed, string ReleaseId, string? Reason);
 public sealed record DistributionError(string Code, string Message, bool Retryable, string RequestId);
 
