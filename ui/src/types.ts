@@ -1,7 +1,7 @@
 export type Source = { kind: "modrinth" | "direct" | "hosted" | "manual"; projectId?: string; pageUrl?: string };
 export type PackFile = { id: string; path: string; name: string; version: string; length: number; sha512: string; source: Source;
   requirement: "required" | "recommended"; defaultEnabled: boolean; modIds: string[]; requires: string[] };
-export type Manifest = { releaseId: string; sequence: number; serverName: string; displayVersion: string; changelog: string;
+export type Manifest = { releaseId: string; sequence: number; serverName: string; displayVersion: string; changelog: string; resourcePacks?: { bindingId: string; fileId: string }[];
   minecraftVersion: string; loader: { version: string }; java: { major: number }; files: PackFile[] };
 export type SavedServer = { id: string; name: string; target: { origin: string; publicId: string }; playerName: string | null;
   memoryMiB: number; optionalChoices: Record<string, boolean> | null; gameObserved: boolean };

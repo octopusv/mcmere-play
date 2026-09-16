@@ -124,7 +124,7 @@ public sealed class DistributionClient(HttpClient http, DistributionTarget targe
     public async Task<LaunchCheckResult> CheckLaunchAsync(string releaseId, CancellationToken ct = default)
     {
         ManifestValidation.Id(releaseId);
-        var result = await AuthorizedAsync<LaunchCheckResult>(HttpMethod.Post, "launch-check", new LaunchCheckRequest(releaseId), ct);
+        var result = await AuthorizedAsync<LaunchCheckResult>(HttpMethod.Post, "launch-check", new LaunchCheckRequest(releaseId, ManifestValidation.PackFeatures), ct);
         if (result.ReleaseId != releaseId) throw new DistributionException("release_changed", "配布内容が更新されました。もう一度確認してください。", true);
         return result;
     }

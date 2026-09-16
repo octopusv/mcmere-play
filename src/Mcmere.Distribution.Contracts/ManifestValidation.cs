@@ -4,6 +4,7 @@ namespace Mcmere.Distribution.Contracts;
 
 public static class ManifestValidation
 {
+    public static readonly string[] PackFeatures = ["resource-pack-selection-v1", "paired-packs-v1"];
     public static string Name(string name)
     {
         var value = name?.Trim() ?? "";
@@ -14,7 +15,7 @@ public static class ManifestValidation
 
     public static void Validate(PackManifest manifest)
     {
-        if (manifest.SchemaVersion != 1) Fail("unsupported_schema", "この配布形式にはアプリの更新が必要です。");
+        if (manifest.SchemaVersion is not (1 or 2)) Fail("unsupported_schema", "この配布形式にはアプリの更新が必要です。");
         Id(manifest.ReleaseId); Id(manifest.ServerPublicId);
         if (manifest.Sequence < 1 || manifest.CreatedAt == default) Fail("invalid_manifest", "配布版の識別情報が不正です。");
         Text(manifest.ServerName, 100); Text(manifest.DisplayVersion, 100); Text(manifest.Changelog, 20000, empty: true);
@@ -67,6 +68,50 @@ public static class ManifestValidation
         foreach (var path in paths)
             if (paths.Any(other => other.StartsWith(path + "/", StringComparison.OrdinalIgnoreCase)))
                 Fail("duplicate_path", "ファイルとフォルダーの保存先が競合しています。");
+        ValidatePacks(manifest, byId);
+    }
+
+    private static void ValidatePacks(PackManifest manifest, IReadOnlyDictionary<string, PackFile> files)
+    {
+        if (manifest.RequiredFeatures is null || manifest.ResourcePacks is null || manifest.PackPairs is null ||
+            manifest.RequiredFeatures.Count > 32 || manifest.ResourcePacks.Count > 256 || manifest.PackPairs.Count > 256)
+            Fail("invalid_packs", "パックの構成が不正です。");
+        if (manifest.SchemaVersion == 1)
+        {
+            if (manifest.FingerprintVersion != 1 || manifest.ResourcePacks.Count != 0 || manifest.PackPairs.Count != 0 || manifest.RequiredFeatures.Count != 0)
+                Fail("unsupported_schema", "パックの有効化には配布形式2が必要です。");
+            return;
+        }
+        if (manifest.FingerprintVersion != 2) Fail("invalid_fingerprint", "構成の確認方式が不正です。");
+        Id(manifest.DeploymentId!);
+        if (manifest.RequiredFeatures.Distinct(StringComparer.Ordinal).Count() != manifest.RequiredFeatures.Count ||
+            manifest.RequiredFeatures.Any(feature => !PackFeatures.Contains(feature)))
+            Fail("unsupported_feature", "この構成にはアプリの更新が必要です。");
+        if (!manifest.RequiredFeatures.Contains(PackFeatures[0]) || (manifest.PackPairs.Count > 0 && !manifest.RequiredFeatures.Contains(PackFeatures[1])))
+            Fail("invalid_packs", "パックの有効化指定がありません。");
+        var bindings = new HashSet<string>(StringComparer.Ordinal);
+        var resourceFiles = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var selection in manifest.ResourcePacks)
+        {
+            if (selection is null || !Regex.IsMatch(selection.BindingId ?? "", "^[a-zA-Z0-9_-]{1,100}$") || !bindings.Add(selection.BindingId!) ||
+                !resourceFiles.Add(selection.FileId) || !files.TryGetValue(selection.FileId, out var file) ||
+                !file.Path.StartsWith("resourcepacks/", StringComparison.Ordinal) || file.Path.Split('/').Length != 2 ||
+                !file.Path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || file.UpdatePolicy != FileUpdatePolicy.Managed)
+                Fail("invalid_resource_pack", "リソースパックの保存先または選択が不正です。");
+        }
+        if (files.Values.Any(file => file.Path.StartsWith("resourcepacks/", StringComparison.Ordinal) && !resourceFiles.Contains(file.Id)))
+            Fail("invalid_resource_pack", "有効化の指定がないリソースパックがあります。");
+        var pairs = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var pair in manifest.PackPairs)
+        {
+            if (pair is null || !pairs.Add(pair.BindingId) || !bindings.Contains(pair.BindingId) || pair.Mode is not ("sameArtifact" or "separateArtifacts") ||
+                !files.TryGetValue(pair.ClientFileId, out var file) || file.Requirement != FileRequirement.Required ||
+                !manifest.ResourcePacks.Any(item => item.BindingId == pair.BindingId && item.FileId == pair.ClientFileId))
+                Fail("pack_pair_mismatch", "サーバーと参加者用パックの対応が不正です。");
+            Hash(pair.ServerArtifactSha512, 128);
+            if (pair.Mode == "sameArtifact" && files[pair.ClientFileId].Sha512 != pair.ServerArtifactSha512)
+                Fail("pack_pair_mismatch", "サーバーと参加者用パックのハッシュが一致しません。");
+        }
     }
 
     public static IReadOnlyList<PackFile> Selected(PackManifest manifest, ISet<string>? optionalIds = null)
