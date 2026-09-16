@@ -57,7 +57,6 @@ export default function App() {
   async function mainAction() {
     if (!server) return;
     if (!server.playerName || ["name_required", "name_not_listed"].includes(state?.errorCode ?? "")) { nameDialog(); return; }
-    if (state?.errorCode === "unknown_mods" || (state?.plan?.unknownMods.length ?? 0) > 0) { setDialog("quarantine"); return; }
     if (state?.stage === "launching") { await act("open-prism", { serverId: server.id }); return; }
     if (!state?.manifest || state.stage === "idle" || state.errorCode === "release_changed" || state.status?.compatibilityState !== "matched" && state.stage === "ready") {
       await act("inspect", { serverId: server.id }); return;
@@ -78,7 +77,6 @@ export default function App() {
     if (item?.stage === "preparing") return ["MODを準備しています", "準備中"];
     if (item?.stage === "applying") return ["更新を反映しています", "反映中"];
     if (item?.stage === "recovering") return ["前回の更新を復旧しています", "復旧中"];
-    if (item?.errorCode === "unknown_mods" || (item?.plan?.unknownMods.length ?? 0) > 0) return ["追加したMODが見つかりました", "退避する内容を確認"];
     if (item?.errorCode === "prism_running") return ["更新する前にPrismを閉じてください", "再試行"];
     if (item?.errorCode === "manual_download") return ["手動で取得するファイルがあります", "再試行"];
     if (item?.status?.gameState === "offline") return ["サーバーは停止中です", "環境を準備"];
@@ -165,6 +163,12 @@ export default function App() {
             <small>{required.has(file.id) ? "参加に必要" : "推奨"} · {state.plan?.changes.some(item => item.path === file.path) ? "準備が必要" : state.plan ? "確認済み" : "未確認"}</small>
             {file.source.kind === "manual" && <div className="actions"><button onClick={() => void act("manual-page", { serverId: server.id, fileId: file.id })}>配布ページを開く</button><button disabled={busy} onClick={() => void act("import-file", { serverId: server.id, fileId: file.id })}>ファイルを取り込む</button></div>}</div>
             <label className="play-check"><input type="checkbox" aria-label={file.name + "を含める"} checked={selected.has(file.id)} disabled={busy || required.has(file.id)} onChange={event => void act("optional", { serverId: server.id, fileId: file.id, enabled: event.target.checked })} />{required.has(file.id) ? "必須" : "含める"}</label></div>)}</div>
+          <div className="play-section-heading"><h2>自分で追加したMOD</h2><button disabled={busy} onClick={() => void act("inspect", { serverId: server.id })}>一覧を更新</button></div>
+          <p className="play-muted">modsフォルダーに追加したMODは、更新・修復の際も保持します。配布MODと同じMODの別バージョンは追加せず、Minecraftとローダーに対応するものを選んでください。</p>
+          {(state.plan?.unknownMods.length ?? 0) > 0 ? <>
+            <div className="item-list">{state.plan!.unknownMods.map(path => <div className="list-item" key={path}><span className="item-symbol"><Package size={20} /></span><div className="item-main"><strong>{path}</strong><small>個人追加 · 保持します · 互換性は未確認</small></div></div>)}</div>
+            <button disabled={busy} onClick={() => setDialog("quarantine")}>追加MODの退避を確認</button>
+          </> : <p className="play-muted">追加したMODはありません。「設定」→「フォルダーを開く」から追加し、「一覧を更新」で確認できます。</p>}
         </> : <p className="play-muted">概要で配布情報を確認してください。</p>)}
         {tab === "history" && <><h2>更新履歴</h2>{state?.manifest && <div className="play-history"><History size={17} /><div><strong>配布版 {state.manifest.displayVersion}</strong><p>{state.manifest.changelog || "サーバーに合わせたプレイ環境"}</p></div></div>}
           {history.map(item => <div className="play-history" key={item.id}><Check size={17} /><div><strong>{new Date(item.appliedAt).toLocaleString("ja-JP")}</strong><p>{item.operations.length}ファイルを反映</p></div></div>)}{history.length === 0 && <p className="play-muted">このPCでの更新履歴はまだありません。</p>}</>}
@@ -196,7 +200,7 @@ export default function App() {
       })()}>{discovery ? "このサーバーを追加" : "サーバーを確認"}<ArrowRight size={15} /></button></footer></Dialog>}
     {dialog === "name" && <Dialog title="Minecraftの名前" close={() => setDialog(null)}><div className="play-dialog-body"><ErrorText message={error} /><p>ホワイトリストに登録されている名前を入力してください。</p>
       <form onSubmit={event => { event.preventDefault(); void identify(); }}><label>Minecraftの名前<input autoFocus value={playerName} maxLength={16} onChange={event => setPlayerName(event.target.value)} autoComplete="off" spellCheck={false} /></label><button type="submit" className="primary" disabled={requesting || !playerName}>名前を確認する</button></form></div></Dialog>}
-    {dialog === "quarantine" && server && <Dialog title="追加したMODを退避" close={() => setDialog(null)}><div className="play-dialog-body"><p>次のファイルをバックアップへ退避し、サーバーの標準構成を準備します。</p><ul>{state?.plan?.unknownMods.map(path => <li key={path}>{path}</li>)}</ul></div><footer><button onClick={() => setDialog(null)}>キャンセル</button><button className="primary" disabled={busy} onClick={() => { setDialog(null); void act("prepare", { serverId: server.id, launch: true, quarantine: true }); }}>退避して準備する</button></footer></Dialog>}
+    {dialog === "quarantine" && server && <Dialog title="追加したMODを退避" close={() => setDialog(null)}><div className="play-dialog-body"><p>次のファイルをバックアップへ退避し、サーバーの標準構成を準備します。追加MODを使い続ける場合はキャンセルしてください。</p><ul>{state?.plan?.unknownMods.map(path => <li key={path}>{path}</li>)}</ul></div><footer><button onClick={() => setDialog(null)}>キャンセル</button><button className="primary" disabled={busy} onClick={() => { setDialog(null); void act("prepare", { serverId: server.id, launch: false, quarantine: true }); }}>退避して準備する</button></footer></Dialog>}
     {dialog === "remove" && server && <Dialog title="サーバーの登録を外す" close={() => setDialog(null)}><div className="play-dialog-body"><p>{server.name}を一覧から外します。専用フォルダー内のデータは保持します。</p></div><footer><button onClick={() => setDialog(null)}>キャンセル</button><button className="primary" onClick={() => { setDialog(null); void act("remove", { serverId: server.id }); }}>登録を外す</button></footer></Dialog>}
   </div>;
 }

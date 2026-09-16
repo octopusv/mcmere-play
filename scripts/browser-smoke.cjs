@@ -17,7 +17,7 @@ const path = require('node:path');
   const browser = await chromium.launch({ channel: 'msedge', headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1080, height: 800 }, deviceScaleFactor: 2, reducedMotion: 'reduce' });
-    const errors = []; const calls = [];
+    const errors = []; const calls = []; const requests = [];
     page.on('pageerror', error => errors.push(error.message));
     const file = (id, required) => ({ id, path: 'mods/' + id + '.jar', name: id === 'main' ? 'Cobblemon' : '推奨MOD', version: '1.0', length: 3000000, sha512: 'a'.repeat(128),
       source: { kind: 'modrinth', projectId: id }, requirement: required ? 'required' : 'recommended', defaultEnabled: true, modIds: [id], requires: [] });
@@ -28,6 +28,7 @@ const path = require('node:path');
     let settingsCorrupt = false;
     await page.exposeBinding('__playBridge', async (_source, request) => {
       calls.push(request.op);
+      requests.push(request);
       const row = state.servers[0];
       if (request.op === 'state' && settingsCorrupt) return { id: request.id, ok: false, error: { code: 'settings_corrupt', message: 'アプリ設定を読み取れません。' } };
       if (request.op === 'recover-settings') settingsCorrupt = false;
@@ -44,7 +45,7 @@ const path = require('node:path');
           manifest: { releaseId: 'r', sequence: 1, serverName: 'Example server', displayVersion: '1', changelog: '検証用の構成', minecraftVersion: '1.21.1', loader: { version: '21.1.250' }, java: { major: 21 }, files: [file('main', true), file('optional', false), { ...file('resources', true), name: 'Required resource pack', path: 'resourcepacks/example.zip', modIds: [] }], resourcePacks: [{ bindingId: 'example', fileId: 'resources' }] },
           plan: { changes: [{ scope: 'game', path: 'mods/main.jar', action: 'add' }], unknownMods: [], requiredFreeBytes: 300000000, selectedIds: ['main', 'optional'] } });
       }
-      if (request.op === 'prepare') { row.stage = 'ready'; row.plan.changes = []; }
+      if (request.op === 'prepare') { row.stage = 'ready'; row.plan.changes = []; if (request.body.quarantine) row.plan.unknownMods = []; }
       if (request.op === 'memory') state.settings.servers[0].memoryMiB = request.body.memoryMiB;
       if (request.op === 'theme') state.settings.theme = request.body.theme;
       if (request.op === 'optional') state.settings.servers[0].optionalChoices['project:' + request.body.fileId] = request.body.enabled;
@@ -70,9 +71,31 @@ const path = require('node:path');
     await page.getByRole('heading', { name: '参加の準備ができました', exact: true }).waitFor();
     await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === '参加する' && !button.disabled));
     await page.screenshot({ path: path.join(out, 'ready-light.png'), fullPage: true });
+    state.servers[0].plan.unknownMods = ['mods/personal-map.jar', 'mods/personal-recipe.jar'];
+    await page.reload();
+    await page.getByRole('button', { name: '参加する', exact: true }).click();
+    const join = requests.filter(request => request.op === 'prepare').at(-1);
+    if (!join.body.launch || join.body.quarantine) throw new Error('Joining with personal mods did not preserve them.');
+    if (await page.getByRole('dialog').count()) throw new Error('Joining required a quarantine dialog.');
+    await page.getByRole('tab', { name: '設定', exact: true }).click();
+    await page.getByRole('button', { name: '確認して修復', exact: true }).click();
+    const repair = requests.filter(request => request.op === 'prepare').at(-1);
+    if (repair.body.launch || repair.body.quarantine) throw new Error('Repair did not preserve personal mods.');
     await page.getByRole('tab', { name: '構成', exact: true }).click();
     if (await page.getByLabel('Required resource packを含める').isEnabled()) throw new Error('Required resource pack could be disabled.');
     await page.getByText(/リソースパック · 優先順位 1/).waitFor();
+    await page.getByText('mods/personal-map.jar', { exact: true }).waitFor();
+    await page.getByText('mods/personal-recipe.jar', { exact: true }).waitFor();
+    await page.screenshot({ path: path.join(out, 'personal-mods.png'), fullPage: true });
+    await page.getByRole('button', { name: '追加MODの退避を確認', exact: true }).click();
+    const beforeCancel = calls.filter(op => op === 'prepare').length;
+    await page.getByRole('button', { name: 'キャンセル', exact: true }).click();
+    if (calls.filter(op => op === 'prepare').length !== beforeCancel) throw new Error('Cancelling quarantine started preparation.');
+    await page.getByRole('button', { name: '追加MODの退避を確認', exact: true }).click();
+    await page.getByRole('button', { name: '退避して準備する', exact: true }).click();
+    const quarantine = requests.filter(request => request.op === 'prepare').at(-1);
+    if (!quarantine.body.quarantine || quarantine.body.launch) throw new Error('Explicit quarantine unexpectedly launched the game.');
+    await page.getByText('mods/personal-map.jar', { exact: true }).waitFor({ state: 'hidden' });
     if (await page.getByLabel('Cobblemonを含める').isEnabled()) throw new Error('Required mod could be disabled.');
     await page.getByLabel('推奨MODを含める').click();
     await page.waitForFunction(() => !document.querySelector('[aria-label="推奨MODを含める"]').checked);

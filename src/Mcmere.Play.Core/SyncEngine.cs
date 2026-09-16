@@ -160,7 +160,6 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
         var prepared = await PlanCoreAsync(instanceId, manifest, javaPath, memoryMiB, optionalIds, quarantineUnknown, ct);
         var plan = prepared.Plan;
         if (expectedPlanId is not null && expectedPlanId != plan.Id) throw new DistributionException("plan_changed", "手元の環境が変わりました。変更内容を確認し直してください。", true);
-        if (!quarantineUnknown && plan.UnknownMods.Count > 0) throw new DistributionException("unknown_mods", "追加したMODが見つかりました。退避する対象を確認してください。");
         if (plan.Changes.Count == 0 && await AppliedAsync(instanceId, ct) is { } current && current.Manifest.ReleaseId == manifest.ReleaseId && current.SelectedIds.SequenceEqual(plan.SelectedIds))
         {
             progress?.Report(new("complete", 0, 0));
