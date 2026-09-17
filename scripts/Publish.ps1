@@ -1,6 +1,6 @@
 #requires -Version 7.0
 [CmdletBinding()]
-param([string]$Version = '0.1.2', [string]$DotnetPath = '', [switch]$SkipBuild, [string]$CertificateThumbprint = '', [switch]$RequireSignature, [switch]$SelfSignedTest)
+param([string]$Version = '0.1.3', [string]$DotnetPath = '', [switch]$SkipBuild, [string]$CertificateThumbprint = '', [switch]$RequireSignature, [switch]$SelfSignedTest)
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must use major.minor.patch.' }
 $certificate = $null

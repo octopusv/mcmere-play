@@ -4,7 +4,7 @@
 
 遊びたいMinecraftサーバーに合わせて、Java・NeoForge・MODの環境を準備するWindowsアプリです。必要なファイルやバージョンを確認し、サーバー専用のフォルダーに揃えます。
 
-**[Windows用Setupをダウンロード（v0.1.2）](https://github.com/octopusv/mcmere-play/releases/download/v0.1.2/mcmere-play-Setup-0.1.2.exe)** · [リリース一覧](https://github.com/octopusv/mcmere-play/releases)
+**[Windows用Setupをダウンロード（v0.1.3）](https://github.com/octopusv/mcmere-play/releases/download/v0.1.3/mcmere-play-Setup-0.1.3.exe)** · [リリース一覧](https://github.com/octopusv/mcmere-play/releases)
 
 現在はプレビュー版です。通常は上のSetupを1つダウンロードして使ってください。ZIP版はリリース一覧から取得できます。
 
@@ -23,7 +23,7 @@ GoogleログインやPlay用のアカウント登録はありません。ゲー�
 
 ### 1. mcmere Playをインストールする
 
-1. 上のリンクから`mcmere-play-Setup-0.1.2.exe`をダウンロードして起動します。
+1. 上のリンクから`mcmere-play-Setup-0.1.3.exe`をダウンロードして起動します。
 2. 保存先を確認して**「インストール」**を押します。保存先は初期設定のままで使えます。
 3. 完了したら**「mcmere Playを開く」**を押します。次回からはWindowsのスタートメニューで「mcmere Play」を検索して開けます。
 

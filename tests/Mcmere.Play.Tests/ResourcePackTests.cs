@@ -99,8 +99,90 @@ public sealed class ResourcePackTests : IDisposable
         manifest = manifest with { Files = [manifest.Files[0], high], ResourcePacks = [new("high", "high"), manifest.ResourcePacks[0]] };
         var bytes = Encoding.UTF8.GetBytes("resourcePacks:[\"vanilla\",\"file/personal.zip\"]\nincompatibleResourcePacks:[\"file/high.zip\",\"file/personal.zip\"]\n");
         var patch = ResourcePackOptions.Plan(bytes, manifest, null, manifest.Files);
-        Assert.Equal("[\"vanilla\",\"file/personal.zip\",\"file/mcmere-example.zip\",\"file/high.zip\"]", patch.After.ResourcePacks);
+        Assert.Equal("[\"vanilla\",\"mod_resources\",\"file/personal.zip\",\"file/mcmere-example.zip\",\"file/high.zip\"]", patch.After.ResourcePacks);
         Assert.Equal("[\"file/personal.zip\"]", patch.After.IncompatibleResourcePacks);
+    }
+    [Theory]
+    [InlineData("", "[\"mod_resources\",\"file/mcmere-example.zip\"]")]
+    [InlineData("resourcePacks:[]\n", "[\"mod_resources\",\"file/mcmere-example.zip\"]")]
+    [InlineData("resourcePacks:[\"vanilla\"]\n", "[\"vanilla\",\"mod_resources\",\"file/mcmere-example.zip\"]")]
+    [InlineData("resourcePacks:[\"file/mcmere-example.zip\"]\n", "[\"mod_resources\",\"file/mcmere-example.zip\"]")]
+    [InlineData("resourcePacks:[\"vanilla\",\"file/mcmere-example.zip\",\"mod_resources\",\"mod/cobblemon\",\"mod/mega_showdown\",\"quark-emote-pack\"]\n",
+        "[\"vanilla\",\"mod_resources\",\"mod/cobblemon\",\"mod/mega_showdown\",\"quark-emote-pack\",\"file/mcmere-example.zip\"]")]
+    [InlineData("resourcePacks:[\"vanilla\",\"mod_resources\",\"file/personal.zip\",\"file/mcmere-example.zip\"]\n",
+        "[\"vanilla\",\"mod_resources\",\"file/personal.zip\",\"file/mcmere-example.zip\"]")]
+    public async Task NeoForgeBasePackPrecedesManagedPacksOnFirstInstallAndRepair(string original, string expected)
+    {
+        var (manifest, _) = await Create();
+        var bytes = Encoding.UTF8.GetBytes(original);
+        var patch = ResourcePackOptions.Plan(bytes, manifest, null, manifest.Files);
+        Assert.Equal(expected, patch.After.ResourcePacks);
+        var again = ResourcePackOptions.Plan(ResourcePackOptions.Write(bytes, patch.After), manifest, manifest, manifest.Files);
+        Assert.Equal(again.Before, again.After);
+    }
+    [Fact]
+    public async Task NoEnabledManagedPacksDoesNotAddNeoForgeBasePack()
+    {
+        var (manifest, _) = await Create();
+        var bytes = Encoding.UTF8.GetBytes("resourcePacks:[\"vanilla\",\"file/personal.zip\"]\n");
+        var patch = ResourcePackOptions.Plan(bytes, manifest, null, []);
+        Assert.Equal(patch.Before, patch.After);
+        patch = ResourcePackOptions.Plan(bytes, manifest with { Loader = new("fabric", "example") }, null, manifest.Files);
+        Assert.Equal("[\"vanilla\",\"file/personal.zip\",\"file/mcmere-example.zip\"]", patch.After.ResourcePacks);
+    }
+    [Fact]
+    public async Task RepairingMissingNeoForgeBasePackDoesNotDownloadOrReplaceZip()
+    {
+        var (manifest, engine) = await Create();
+        await Sync(engine, manifest);
+        await File.WriteAllTextAsync(Options, "music:0.3\nresourcePacks:[\"file/mcmere-example.zip\"]\n");
+        var plan = await engine.PlanAsync(Instance, manifest, Path.Combine(_root, "java.exe"), 4096);
+        Assert.Equal("resourcePackOptions", Assert.Single(plan.Changes).Scope);
+        var offline = new SyncEngine(_paths, new Idle(), new UnavailableProvider());
+        await Sync(offline, manifest);
+        Assert.Equal("[\"mod_resources\",\"file/mcmere-example.zip\"]", ResourcePackOptions.Read(await File.ReadAllBytesAsync(Options)).ResourcePacks);
+        Assert.Contains("music:0.3\n", await File.ReadAllTextAsync(Options));
+        Assert.Equal(manifest.Files[0].Sha512, await PlayFiles.Sha512Async(Path.Combine(_paths.Game(Instance), manifest.Files[0].Path)));
+        Assert.Empty((await offline.PlanAsync(Instance, manifest, Path.Combine(_root, "java.exe"), 4096)).Changes);
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PackUpdateKeepsPriorityAndRejectsCorruptDownloads(bool corrupt)
+    {
+        var (manifest, engine) = await Create();
+        await Sync(engine, manifest);
+        var before = await File.ReadAllBytesAsync(Options);
+        var source = Path.Combine(_root, "source.zip");
+        using (var zip = ZipFile.Open(source, ZipArchiveMode.Update))
+        using (var writer = new StreamWriter(zip.CreateEntry("assets/example/lang/ja_jp.json").Open())) writer.Write("{}");
+        var bytes = await File.ReadAllBytesAsync(source);
+        var file = manifest.Files[0] with { Path = "resourcepacks/mcmere-updated.zip", Length = bytes.Length,
+            Sha512 = Convert.ToHexString(SHA512.HashData(bytes)).ToLowerInvariant() };
+        var next = manifest with { Sequence = 2, ReleaseId = new string('2', 32), Files = [file],
+            PackPairs = [manifest.PackPairs[0] with { ServerArtifactSha512 = file.Sha512 }] };
+        if (corrupt)
+        {
+            bytes[^1] ^= 1;
+            await File.WriteAllBytesAsync(source, bytes);
+            Assert.Equal("download_corrupt", (await Assert.ThrowsAsync<DistributionException>(() => Sync(engine, next))).Code);
+            Assert.Equal(before, await File.ReadAllBytesAsync(Options));
+            Assert.Equal(manifest.ReleaseId, (await engine.AppliedAsync(Instance))!.Manifest.ReleaseId);
+            Assert.Equal(manifest.Files[0].Sha512, await PlayFiles.Sha512Async(Path.Combine(_paths.Game(Instance), manifest.Files[0].Path)));
+            Assert.False(File.Exists(Path.Combine(_paths.Game(Instance), file.Path)));
+        }
+        else
+        {
+            await Sync(engine, next);
+            Assert.Equal("[\"mod_resources\",\"file/mcmere-updated.zip\"]", ResourcePackOptions.Read(await File.ReadAllBytesAsync(Options)).ResourcePacks);
+            Assert.Equal(file.Sha512, await PlayFiles.Sha512Async(Path.Combine(_paths.Game(Instance), file.Path)));
+            Assert.False(File.Exists(Path.Combine(_paths.Game(Instance), manifest.Files[0].Path)));
+            Assert.Empty((await engine.PlanAsync(Instance, next, Path.Combine(_root, "java.exe"), 4096)).Changes);
+        }
+    }
+    private sealed class UnavailableProvider : IFileProvider
+    {
+        public Task<string> GetAsync(PackFile file, CancellationToken ct) => throw new InvalidOperationException("No download should be needed to repair pack order.");
     }
     private sealed class Provider(string path) : IFileProvider { public Task<string> GetAsync(PackFile file, CancellationToken ct) => Task.FromResult(path); }
     private sealed class Idle : IInstanceActivity { public Task RequireIdleAsync(string instanceId, CancellationToken ct) => Task.CompletedTask; }
