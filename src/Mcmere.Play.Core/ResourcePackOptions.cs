@@ -53,8 +53,14 @@ public static class ResourcePackOptions
         static IEnumerable<string> PackIds(PackManifest? pack) => pack?.ResourcePacks.Select(item => "file/" + pack.Files.Single(file => file.Id == item.FileId).Path["resourcepacks/".Length..]) ?? [];
         var owned = PackIds(manifest).Concat(PackIds(previous)).ToHashSet(StringComparer.Ordinal);
         var enabled = manifest.ResourcePacks.Where(item => selected.Any(file => file.Id == item.FileId))
-            .Select(item => "file/" + manifest.Files.Single(file => file.Id == item.FileId).Path["resourcepacks/".Length..]).Reverse();
-        var ids = Parse(before.ResourcePacks).Where(id => !owned.Contains(id)).Concat(enabled).ToArray();
+            .Select(item => "file/" + manifest.Files.Single(file => file.Id == item.FileId).Path["resourcepacks/".Length..]).Reverse().ToArray();
+        var ids = Parse(before.ResourcePacks).Where(id => !owned.Contains(id)).ToList();
+        // NeoForge 21.1 adds a missing required mod_resources pack at Position.TOP,
+        // after file packs. Persist it explicitly so its children stay below our overrides
+        // even before the first Minecraft launch. options.txt is low-to-high priority.
+        if (enabled.Length > 0 && manifest.Loader.Kind == "neoforge" && !ids.Contains("mod_resources"))
+            ids.Insert(ids.IndexOf("vanilla") + 1, "mod_resources");
+        ids.AddRange(enabled);
         var incompatible = Parse(before.IncompatibleResourcePacks).Where(id => !owned.Contains(id)).ToArray();
         var after = new PackOptionValues(
             ids.SequenceEqual(Parse(before.ResourcePacks)) ? before.ResourcePacks : JsonSerializer.Serialize(ids),

@@ -82,7 +82,8 @@ public partial class MainWindow
         {
             var options = ResourcePackOptions.Read(await File.ReadAllBytesAsync(PlayFiles.Child(_application.Paths.Game(saved.Id), "options.txt"), _lifetime.Token));
             var selected = JsonSerializer.Deserialize<string[]>(options.ResourcePacks ?? "[]")!;
-            var index = -1;
+            var index = Array.IndexOf(selected, "mod_resources");
+            if (index < 0) throw new InvalidOperationException("NeoForgeの基底リソースパックが選択されていません。");
             foreach (var pack in manifest.ResourcePacks.Reverse())
             {
                 var id = "file/" + manifest.Files.Single(file => file.Id == pack.FileId).Path["resourcepacks/".Length..];
