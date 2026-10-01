@@ -26,19 +26,23 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - name: Build and test
+        id: build_test
         shell: pwsh
         run: ./scripts/Build.ps1
       - name: Generate Setup and ZIP
+        id: package
         shell: pwsh
         env:
           PLAY_RELEASE_VERSION: ${{ inputs.version || '0.1.0' }}
         run: ./scripts/Publish.ps1 -Version $env:PLAY_RELEASE_VERSION -SkipBuild
       - name: Verify the generated installer
+        id: installer
         shell: pwsh
         env:
           PLAY_RELEASE_VERSION: ${{ inputs.version || '0.1.0' }}
         run: ./scripts/Test-Installer.ps1 -SetupPath "./artifacts/mcmere-play-Setup-$env:PLAY_RELEASE_VERSION.exe" -DataDirectory "${{ github.workspace }}/.test-data/installer-ci"
       - name: Verify test certificate helpers without changing trust
+        id: certificate_helpers
         shell: pwsh
         run: |
           $certificate = ./scripts/Initialize-TestCertificate.ps1
@@ -47,18 +51,48 @@ jobs:
           if ($bundles.Count -ne 1) { throw 'Unexpected test certificate bundle count.' }
           $setup = Join-Path $bundles[0].FullName 'mcmere-play-Setup-0.1.0-self-signed-test.exe'
           ./scripts/Test-CertificateBundle.ps1 -BundleDirectory $bundles[0].FullName -TestDirectory "$PWD/.test-data/日本語 certificate & spaces !" -SignedFilePath $setup -CertificateThumbprint $certificate.thumbprint
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - name: Record package validation summary
+        if: always()
+        shell: pwsh
+        env:
+          BUILD_OUTCOME: ${{ steps.build_test.outcome }}
+          PACKAGE_OUTCOME: ${{ steps.package.outcome }}
+          INSTALLER_OUTCOME: ${{ steps.installer.outcome }}
+          CERTIFICATE_OUTCOME: ${{ steps.certificate_helpers.outcome }}
+        run: |
+          @(
+            '## Package validation'
+            "Build and tests: $env:BUILD_OUTCOME"
+            "Setup and ZIP: $env:PACKAGE_OUTCOME"
+            "Installer acceptance: $env:INSTALLER_OUTCOME"
+            "Certificate helpers: $env:CERTIFICATE_OUTCOME"
+            "Commit: $env:GITHUB_SHA; run: $env:GITHUB_RUN_ID; attempt: $env:GITHUB_RUN_ATTEMPT"
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          foreach ($report in @('artifacts/SHA256SUMS.txt', '.test-data/installer-ci/evidence/result.json')) {
+            if (Test-Path -LiteralPath $report) {
+              "### $report" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+              '```text' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+              Get-Content -LiteralPath $report | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+              '```' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+            }
+          }
+      # PRs still generate and verify both packages; only manual runs export them.
+      - name: Upload release candidates
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: success() && github.event_name == 'workflow_dispatch'
         with:
           name: mcmere-play-${{ inputs.version || '0.1.0' }}-${{ github.sha }}
           path: |
             artifacts/mcmere-play-Setup-*.exe
             artifacts/mcmere-play-*-win-x64.zip
             artifacts/SHA256SUMS.txt
-          retention-days: 14
+          retention-days: 7
           if-no-files-found: error
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
+      - name: Upload installer evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: failure() || cancelled() || github.event_name == 'workflow_dispatch'
         with:
           name: installer-evidence-${{ github.sha }}
           path: .test-data/installer-ci/evidence/
           retention-days: 7
+          if-no-files-found: ignore
