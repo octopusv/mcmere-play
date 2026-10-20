@@ -42,6 +42,9 @@ public sealed class RuntimeTests : IDisposable
     public void TheServerCannotChooseAnArbitraryJavaDownloadThroughTheCatalog()
     {
         Assert.Equal(RuntimeCatalog.Java21, RuntimeCatalog.Java(new(21, "x64", RuntimeCatalog.Java21.Id)));
+        Assert.Equal(RuntimeCatalog.Java25, RuntimeCatalog.Java(new(25, "x64", RuntimeCatalog.Java25.Id)));
+        Assert.Throws<DistributionException>(() => RuntimeCatalog.Java(new(21, "x64", RuntimeCatalog.Java25.Id)));
+        Assert.Throws<DistributionException>(() => RuntimeCatalog.Java(new(25, "arm64", RuntimeCatalog.Java25.Id)));
         Assert.Throws<DistributionException>(() => RuntimeCatalog.Java(new(21, "x64", "https://untrusted.example/java.zip")));
         Assert.Throws<DistributionException>(() => RuntimeCatalog.Java(new(21, "arm64", RuntimeCatalog.Java21.Id)));
         Assert.Throws<DistributionException>(() => RuntimeCatalog.Java(new(25, "x64", RuntimeCatalog.Java21.Id)));

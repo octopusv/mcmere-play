@@ -2,7 +2,7 @@
 
 **サーバーに合う環境を、準備して参加。**
 
-遊びたいMinecraftサーバーに合わせて、Java・NeoForge・MODの環境を準備するWindowsアプリです。必要なファイルやバージョンを確認し、サーバー専用のフォルダーに揃えます。
+遊びたいMinecraftサーバーに合わせて、Java・NeoForge・MODの環境を準備するWindowsアプリです。必要なファイルやバージョンを確認し、サーバー専用のフォルダーに揃えます。Java 21とJava 25の環境をサーバーごとに独立して管理できます。
 
 **[Windows用Setupをダウンロード（v0.1.3）](https://github.com/octopusv/mcmere-play/releases/download/v0.1.3/mcmere-play-Setup-0.1.3.exe)** · [リリース一覧](https://github.com/octopusv/mcmere-play/releases)
 

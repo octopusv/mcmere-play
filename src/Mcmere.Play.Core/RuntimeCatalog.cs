@@ -12,10 +12,15 @@ public static class RuntimeCatalog
         "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jre_x64_windows_hotspot_21.0.12.1_1.zip",
         "d35f31e712f0fcf6ac5a093edc90204fbff22f720ba3950bd09d331d5e621636", 48999141, "jdk-21.0.12.1+1-jre/bin/java.exe",
         "https://openjdk.org/legal/gplv2+ce.html");
+    public static readonly RuntimeArtifact Java25 = new("temurin-25-4c95451cea98", "25.0.4.1+1-LTS",
+        "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jre_x64_windows_hotspot_25.0.4.1_1.zip",
+        "4c95451cea98556def2c54f7782933f52a26d4a36bd85e1d59f0364464828b07", 58475080, "jdk-25.0.4.1+1-jre/bin/java.exe",
+        "https://openjdk.org/legal/gplv2+ce.html");
     public static RuntimeArtifact Java(JavaRequirement requirement)
     {
-        if (requirement.Major != 21 || requirement.Architecture != "x64" || requirement.RuntimeCatalogId != Java21.Id)
+        var artifact = requirement.Major switch { 21 => Java21, 25 => Java25, _ => null };
+        if (artifact is null || requirement.Architecture != "x64" || requirement.RuntimeCatalogId != artifact.Id)
             throw new DistributionException("runtime_catalog_required", "このJava構成に対応するアプリの更新が必要です。");
-        return Java21;
+        return artifact;
     }
 }
