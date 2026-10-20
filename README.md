@@ -4,7 +4,7 @@
 
 遊びたいMinecraftサーバーに合わせて、Java・NeoForge・MODの環境を準備するWindowsアプリです。必要なファイルやバージョンを確認し、サーバー専用のフォルダーに揃えます。Java 21とJava 25の環境をサーバーごとに独立して管理できます。
 
-**[Windows用Setupをダウンロード（v0.1.5）](https://github.com/octopusv/mcmere-play/releases/download/v0.1.5/mcmere-play-Setup-0.1.5.exe)** · [リリース一覧](https://github.com/octopusv/mcmere-play/releases)
+**[Windows用Setupをダウンロード（v0.1.6）](https://github.com/octopusv/mcmere-play/releases/download/v0.1.6/mcmere-play-Setup-0.1.6.exe)** · [リリース一覧](https://github.com/octopusv/mcmere-play/releases)
 
 現在はプレビュー版です。通常は上のSetupを1つダウンロードして使ってください。ZIP版はリリース一覧から取得できます。
 
@@ -23,7 +23,7 @@ GoogleログインやPlay用のアカウント登録はありません。ゲー�
 
 ### 1. mcmere Playをインストールする
 
-1. 上のリンクから`mcmere-play-Setup-0.1.5.exe`をダウンロードして起動します。
+1. 上のリンクから`mcmere-play-Setup-0.1.6.exe`をダウンロードして起動します。
 2. 保存先を確認して**「インストール」**を押します。保存先は初期設定のままで使えます。
 3. 完了したら**「mcmere Playを開く」**を押します。次回からはWindowsのスタートメニューで「mcmere Play」を検索して開けます。
 
@@ -57,7 +57,9 @@ Playを開いてサーバーを選び、画面に**「環境を確認」**が出
 
 MODなどの更新がある場合は**「準備して参加」**で必要な差分を取得します。「Prismで起動」が表示された場合は、Prismの初回設定やログインを完了してください。ファイルの更新時にPrismやMinecraftの終了を求められたら、両方を閉じて再試行します。
 
-Play本体の更新は、左下の**「アプリ設定」→「更新を確認」**から行えます。画面に従って更新を準備し、PrismとMinecraftの終了後に適用してください。
+Playは起動時にバックグラウンドで本体の更新を確認します。新しい版があると画面上部に案内が表示され、**「更新する」**でダウンロードと適用予約を行います。Prism・Minecraftや準備処理が動いている間は待ち、終了後にPlayを再起動して更新します。
+
+**「あとで」**を選ぶと、その起動中は案内を閉じて通常利用を続けられます。「Playの更新あり」または**「アプリ設定」→「更新を確認」**からも進められます。確認は起動ごとに1回で、通信失敗時も通常利用は続けられます。起動だけでSetupをダウンロード・実行することはありません。ただし、以前に準備・予約した更新はその状態を引き継ぎます。
 
 ## MOD・保存先・データについて
 

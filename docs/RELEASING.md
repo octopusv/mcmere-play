@@ -70,6 +70,8 @@ GitHub ActionsのBuild release packageはPRで検証用0.1.0を生成し、手�
 
 ## アプリ更新の署名
 
+0.1.6以降は初回の画面表示後に更新確認を開始します。通常操作を待たせず、起動中1回・全体15秒の期限で署名付きmetadataだけを読みます。準備済み・予約済みの更新は維持します。通信失敗は設定画面で確認でき、手動で再試行できます。「更新する」は既存のダウンロード検証と適用予約を使用し、Prism・Minecraft・アプリ処理の終了待ちを維持します。`scripts/browser-startup-update.cjs`は案内、あとで、再表示、更新操作、取得中、終了待ち、失敗と狭幅表示を確認します。`--smoke-test --smoke-check-update`は手動ボタンを押さず、起動時の確認と更新案内を実WebView2で検証します。
+
 Playは公開GitHub Releases APIから、このリポジトリの数値tagとapp-update.jsonを取得する。初期版はPrereleaseも対象とする。署名済み情報に記載されたバージョン、Windows x64、同じリポジトリ内のSetup URL、サイズ、SHA256を確認する。署名鍵はアプリに埋め込んだ公開鍵に固定し、MODパックの鍵と共有しない。転送先を制限し、ゲーム配布のsessionを送らない。確認済みの上位版を保存し、古い版への置き換えを拒否する。
 
 このリポジトリには公開鍵src/Mcmere.Play.Core/app-update-key.jsonだけを含める。秘密鍵はローカルのWindowsユーザーに対してDPAPIで保護する。別のWindowsユーザーやGitHub Actionsでは、その暗号化ファイルを直接利用できない。初期化スクリプトは既存鍵を上書きしない。フォークする場合は配布先定数・署名スクリプトのリポジトリURLを変更し、自分の公開鍵を組み込んでからアプリを配布する。

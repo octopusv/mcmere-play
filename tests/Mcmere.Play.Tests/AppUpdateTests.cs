@@ -14,6 +14,7 @@ public sealed class AppUpdateTests : IDisposable
     private readonly byte[] _setup = Encoding.UTF8.GetBytes("verified setup fixture");
     private string _release = "0.2.0";
     private bool _corrupt;
+    private bool _offline;
     private readonly Activity _activity = new();
     private readonly Launcher _launcher = new();
     private readonly List<Uri> _requests = [];
@@ -25,6 +26,7 @@ public sealed class AppUpdateTests : IDisposable
     private HttpClient Http() => new(new Handler(request =>
     {
         _requests.Add(request.RequestUri!); Assert.Null(request.Headers.Authorization);
+        if (_offline) return new(HttpStatusCode.ServiceUnavailable);
         byte[] bytes;
         if (request.RequestUri!.AbsoluteUri == AppUpdateCatalog.ReleasesApi)
             bytes = DistributionJson.Bytes(new[] { new { draft = false, prerelease = true, tag_name = "v" + _release,
@@ -34,6 +36,86 @@ public sealed class AppUpdateTests : IDisposable
         return new(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };
     }));
     private AppUpdater Updater(HttpClient http, bool allowPrereleases = true) => new(Paths, _activity, _launcher, http, ManifestSigning.PublicKey(_key), "0.1.0", allowPrereleases);
+    [Fact]
+    public async Task StartupChecksOnceAndOnlyReadsSignedMetadata()
+    {
+        using var http = Http(); using var updater = Updater(http);
+        await updater.InitializeAsync();
+        await Task.WhenAll(updater.CheckOnStartupAsync(), updater.CheckOnStartupAsync());
+        await updater.CheckOnStartupAsync();
+        Assert.Equal("available", updater.View.Stage);
+        Assert.Equal(2, _requests.Count);
+        Assert.DoesNotContain(_requests, request => request.AbsolutePath.EndsWith(".exe", StringComparison.Ordinal));
+        Assert.False(updater.View.Queued);
+        Assert.Null(_launcher.Started);
+    }
+    [Fact]
+    public async Task StartupFailureDoesNotThrowOrPreventManualRetry()
+    {
+        using var http = Http(); using var updater = Updater(http);
+        _offline = true;
+        await updater.CheckOnStartupAsync();
+        Assert.NotNull(updater.View.Error);
+        Assert.Equal("idle", updater.View.Stage);
+        _offline = false;
+        await updater.CheckAsync();
+        Assert.Equal("available", updater.View.Stage);
+        Assert.Null(updater.View.Error);
+    }
+    [Fact]
+    public async Task StartupWithNoNewReleaseDoesNotOfferOrDownloadAnUpdate()
+    {
+        using var http = Http(); using var updater = Updater(http);
+        _release = "0.1.0";
+        await updater.CheckOnStartupAsync();
+        Assert.Equal("current", updater.View.Stage);
+        Assert.Null(updater.View.Version);
+        Assert.Single(_requests);
+    }
+    [Fact]
+    public async Task ClosingTheApplicationCancelsStartupWithoutAnUnhandledError()
+    {
+        using var http = Http(); using var updater = Updater(http);
+        using var cancel = new CancellationTokenSource(); cancel.Cancel();
+        await updater.CheckOnStartupAsync(cancel.Token);
+        Assert.Empty(_requests);
+        Assert.False(updater.View.Queued);
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StartupPreservesAnAlreadyPreparedOrQueuedUpdate(bool queued)
+    {
+        using var http = Http();
+        using (var first = Updater(http))
+        {
+            await first.CheckAsync(); await first.DownloadAsync(); await first.QueueAsync(queued);
+        }
+        using var restarted = Updater(http);
+        await restarted.InitializeAsync(); _requests.Clear();
+        await restarted.CheckOnStartupAsync();
+        Assert.Empty(_requests);
+        Assert.Equal("ready", restarted.View.Stage);
+        Assert.Equal(queued, restarted.View.Queued);
+        Assert.Null(_launcher.Started);
+    }
+    [Fact]
+    public async Task UpdateActionVerifiesTheDownloadBeforeQueueing()
+    {
+        using var http = Http(); using var updater = Updater(http);
+        await updater.CheckOnStartupAsync();
+        _corrupt = true;
+        await Assert.ThrowsAsync<DistributionException>(() => updater.PrepareAndQueueAsync());
+        Assert.False(updater.View.Queued);
+        Assert.Null(_launcher.Started);
+        _corrupt = false;
+        await updater.PrepareAndQueueAsync();
+        Assert.Equal("ready", updater.View.Stage);
+        Assert.True(updater.View.Queued);
+        _activity.State = new(true, true, false);
+        Assert.False(await updater.TryStartAsync(123, DateTimeOffset.UtcNow, false));
+        Assert.Null(_launcher.Started);
+    }
     [Fact]
     public async Task SignedUpdateWaitsForPrismGameAndOperationsThenHandsOffExactlyOnce()
     {

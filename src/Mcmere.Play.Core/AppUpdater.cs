@@ -30,6 +30,7 @@ public sealed class AppUpdater : IDisposable
     private SavedAppUpdate? _saved;
     private AppUpdateManifest? _manifest;
     private bool _started;
+    private int _startupChecked;
     public AppUpdateView View { get; private set; } = new();
     public event Action? Changed;
     public AppUpdater(PlayPaths paths, IPlayActivity activity, IAppUpdateLauncher? launcher = null, HttpClient? http = null,
@@ -56,6 +57,20 @@ public sealed class AppUpdater : IDisposable
         var ready = await VerifySetupAsync(SetupPath(_paths, manifest), manifest, ct);
         Set(new(ready ? "ready" : "available", manifest.Version, manifest.Notes, manifest.Length, Queued: saved.Queued && ready));
     }, ct);
+    public async Task CheckOnStartupAsync(CancellationToken ct = default)
+    {
+        if (Interlocked.Exchange(ref _startupChecked, 1) != 0 || View.Queued || View.Stage is "ready" or "applying") return;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        try { await CheckAsync(timeout.Token); }
+        catch (DistributionException) { }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested) { }
+    }
+    public async Task PrepareAndQueueAsync(CancellationToken ct = default)
+    {
+        if (View.Stage == "available") await DownloadAsync(ct);
+        await QueueAsync(true, ct);
+    }
     public Task CheckAsync(CancellationToken ct = default) => RunAsync(async () =>
     {
         if (View.Queued) throw new DistributionException("update_queued", "更新予約を取り消してから再確認してください。");

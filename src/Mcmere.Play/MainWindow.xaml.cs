@@ -79,6 +79,7 @@ public partial class MainWindow : Window
                 if (!args.IsSuccess) return;
                 _ready = true; _timer.Start(); await EmitAsync();
                 if (_pendingLink is { } url) { _pendingLink = null; Post(new { type = "open-server", url }); }
+                if (!_smoke || _checkUpdateSmoke) _ = _updates.CheckOnStartupAsync(_lifetime.Token);
                 if (_smoke) await SmokeAsync();
             };
             Browser.CoreWebView2.Navigate(Origin + "/index.html");
@@ -158,6 +159,7 @@ public partial class MainWindow : Window
                 case "state": result = await CurrentViewAsync(); break;
                 case "check-update": await _updates.CheckAsync(_lifetime.Token); break;
                 case "download-update": await _updates.DownloadAsync(_lifetime.Token); break;
+                case "update-now": await _updates.PrepareAndQueueAsync(_lifetime.Token); break;
                 case "queue-update": await _updates.QueueAsync(Flag("queued"), _lifetime.Token); break;
                 case "choose-migration":
                     if ((await _application.ViewAsync(_lifetime.Token)).Busy || _updates.View.Queued || _updates.View.Stage is "checking" or "downloading" or "applying")
@@ -319,14 +321,6 @@ public partial class MainWindow : Window
             }
             if (_checkUpdateSmoke)
             {
-                await Browser.CoreWebView2.ExecuteScriptAsync("[...document.querySelectorAll('button')].find(button => button.textContent === 'アプリ設定')?.click()");
-                var clicked = false;
-                for (var attempt = 0; attempt < 50; attempt++)
-                {
-                    if (await Browser.CoreWebView2.ExecuteScriptAsync("(() => { const button = document.querySelector('[data-action=\"check-update\"]'); if (!button || button.disabled) return false; button.click(); return true; })()") == "true") { clicked = true; break; }
-                    await Task.Delay(100, _lifetime.Token);
-                }
-                if (!clicked) throw new InvalidOperationException("更新確認の操作が表示されませんでした。");
                 for (var attempt = 0; attempt < 350; attempt++)
                 {
                     if (_updates.View.Stage is "unpublished" or "current" or "available" or "ready" || _updates.View.Error is not null) break;
@@ -335,6 +329,9 @@ public partial class MainWindow : Window
                 if (_updates.View.Error is not null || _updates.View.Stage is not ("unpublished" or "current" or "available" or "ready"))
                     throw new InvalidOperationException(_updates.View.Error ?? "アプリの更新確認が完了しませんでした。");
                 await Task.Delay(500, _lifetime.Token);
+                if (_updates.View.Stage is "available" or "ready" &&
+                    await Browser.CoreWebView2.ExecuteScriptAsync("!!document.querySelector('[data-role=\"app-update-notice\"]')") != "true")
+                    throw new InvalidOperationException("起動時の更新案内が表示されませんでした。");
             }
             if (_recoverSettingsSmoke)
             {

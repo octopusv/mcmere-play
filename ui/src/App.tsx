@@ -24,6 +24,10 @@ export default function App() {
   const [requesting, setRequesting] = useState(false);
   const [history, setHistory] = useState<{ id: string; appliedAt: string; operations: { action: string }[] }[]>([]);
   const [applicationSettings, setApplicationSettings] = useState(false);
+  const [dismissedUpdate, setDismissedUpdate] = useState<string | null>(null);
+  const update = view?.update;
+  const hasUpdate = !!update?.version && ["available", "ready", "downloading", "applying"].includes(update.stage);
+  const updating = !!update && (update.queued || ["downloading", "applying"].includes(update.stage));
   const server = view?.settings.servers.find(server => server.id === view.settings.selectedServer) ?? view?.settings.servers[0];
   const state = view?.servers.find(item => item.id === server?.id);
   const busy = requesting || view?.busy;
@@ -104,10 +108,26 @@ export default function App() {
       </button>)}</nav>
       <button className="sidebar-link" onClick={() => { setUrl(""); setDiscovery(null); setDialog("add"); setError(null); }}><Plus size={16} />サーバーを追加</button>
       <div className="sidebar-spacer" />
+      {hasUpdate && <button className="sidebar-link play-update-link" onClick={() => setApplicationSettings(true)}><Download size={16} />Playの更新あり</button>}
       <button className="sidebar-link" onClick={() => setApplicationSettings(true)}><Settings size={16} />アプリ設定</button>
       <small className="play-version">mcmere Play {view?.version ?? ""}</small>
     </aside>
     <main className="play-main">
+      {isNative && view && update && hasUpdate && !applicationSettings && (dismissedUpdate !== update.version || updating) &&
+        <section className="play-update play-update-notice" data-role="app-update-notice" aria-label="Playの更新案内">
+          <strong>{updating ? "Playの更新を準備しています" : "Playの更新があります"}</strong>
+          <p>バージョン {update.version}{!updating && " を利用できます。"}</p>
+          {update.stage === "downloading" && <p role="status">ダウンロード中 · {size(update.received)} / {size(update.length)}</p>}
+          {update.queued && <p role="status">PrismとMinecraftが閉じ、処理が完了すると更新します。Playは開いたままにしてください。</p>}
+          {update.stage === "applying" && <p role="status">更新用セットアップを起動しています。</p>}
+          {!updating && <p>「更新する」でダウンロードし、Playを再起動して適用します。PrismとMinecraftが起動中の場合は、終了後に適用します。</p>}
+          <ErrorText message={update.error} />
+          <div className="actions">
+            {!updating && <button className="primary" disabled={busy} onClick={() => void act("update-now")}>更新する</button>}
+            {!updating && <button disabled={requesting} onClick={() => setDismissedUpdate(update.version)}>あとで</button>}
+            <button onClick={() => setApplicationSettings(true)}>更新の詳細</button>
+          </div>
+        </section>}
       {!isNative ? <section className="play-empty"><h1>mcmere Playで開いてください</h1><p>この画面はWindowsアプリの中で利用できます。</p></section> :
       !view ? <section className="play-empty">{error ? <><h1>設定を確認してください</h1><ErrorText message={error} />
         {startupErrorCode === "settings_corrupt" && <><p>前回の保存時点の設定に戻します。ゲームデータはそのまま残ります。</p><button className="primary" data-action="recover-settings" disabled={requesting} onClick={() => void act("recover-settings")}>保存済みの設定を復元</button></>}
@@ -116,7 +136,7 @@ export default function App() {
         <label>外観<select aria-label="外観" value={view.settings.theme} disabled={busy} onChange={event => void act("theme", { theme: event.target.value })}><option value="system">システム設定</option><option value="light">ライト</option><option value="dark">ダーク</option></select></label>
         <div className="play-settings-row"><div><strong>データ保存先</strong><small data-role="data-root">{view.dataRoot}</small></div><button data-action="choose-migration" disabled={busy || view.update?.queued || ["checking", "downloading", "applying"].includes(view.update?.stage ?? "")} onClick={() => void act("choose-migration").then(value => { if (value) { setMigrationPlan(value as MigrationPlan); setDialog("migrate"); } })}>保存先を変更</button></div>
         {view.migration && <div className="play-update" role="status"><strong>{view.migration.stage === "switching" ? "保存先を切り替えています" : "データをコピーして確認しています"}</strong><p>{view.migration.completedFiles} / {view.migration.totalFiles}ファイル · {size(view.migration.copiedBytes)} / {size(view.migration.totalBytes)}</p>{view.canCancel && <button onClick={() => void native("cancel")}>移行を中止</button>}</div>}
-        <div className="play-settings-row"><div><strong>mcmere Play</strong><small>バージョン {view.version}</small></div><button data-action="check-update" disabled={requesting || view.update?.queued} onClick={() => void act("check-update")}>更新を確認</button></div>
+        <div className="play-settings-row"><div><strong>mcmere Play</strong><small>バージョン {view.version}</small></div><button data-action="check-update" disabled={requesting || view.update?.queued || ["checking", "downloading", "applying"].includes(view.update?.stage ?? "")} onClick={() => void act("check-update")}>更新を確認</button></div>
         {view.update && <div className="play-update" data-stage={view.update.stage}>
           {view.update.stage === "current" && <p>利用できる更新はありません。</p>}
           {view.update.stage === "unpublished" && <p>配布用の更新情報はまだ公開されていません。</p>}
