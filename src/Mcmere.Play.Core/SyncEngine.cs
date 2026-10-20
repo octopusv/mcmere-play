@@ -10,7 +10,8 @@ public sealed record SyncItem(string Scope, string Path, SyncAction Action, stri
 public sealed record SyncPlan(string Id, string InstanceId, string ReleaseId, IReadOnlyList<SyncItem> Changes,
     IReadOnlyList<string> UnknownMods, long RequiredFreeBytes, IReadOnlyList<string> SelectedIds);
 public sealed record SyncProgress(string Stage, int Completed, int Total);
-public sealed record AppliedPack(string TransactionId, PackManifest Manifest, IReadOnlyList<string> SelectedIds, DateTimeOffset AppliedAt);
+public sealed record AppliedPack(string TransactionId, PackManifest Manifest, IReadOnlyList<string> SelectedIds, DateTimeOffset AppliedAt,
+    ManagedServerEntry? ServerListEntry = null);
 internal sealed record SyncJournal(string Id, string InstanceId, string Phase, IReadOnlyList<SyncItem> Operations);
 public interface IInstanceActivity { Task RequireIdleAsync(string instanceId, CancellationToken ct); }
 public interface IFileProvider { Task<string> GetAsync(PackFile file, CancellationToken ct); }
@@ -35,6 +36,7 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
         "game" => PlayFiles.Child(paths.Game(instanceId), operation.Path),
         "profile" when operation.Path is "instance.cfg" or "mmc-pack.json" => PlayFiles.Child(paths.Instance(instanceId), operation.Path),
         "resourcePackOptions" when operation.Path == "options.txt" => PlayFiles.Child(paths.Game(instanceId), "options.txt"),
+        "serverList" when operation.Path == "servers.dat" => PlayFiles.Child(paths.Game(instanceId), "servers.dat"),
         _ => throw new DistributionException("invalid_journal", "更新記録の対象が不正です。")
     };
 
@@ -50,6 +52,12 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
             if (applied.SelectedIds is null || applied.SelectedIds.Count != applied.SelectedIds.Distinct(StringComparer.Ordinal).Count() ||
                 applied.SelectedIds.Any(id => !applied.Manifest.Files.Any(candidate => candidate.Id == id)))
                 throw new DistributionException("invalid_state", "保存した構成の選択情報が不正です。");
+            if (applied.ServerListEntry is { } entry)
+            {
+                if (string.IsNullOrWhiteSpace(entry.Name) || entry.Name.Length > 100)
+                    throw new DistributionException("invalid_state", "保存したサーバー一覧の管理情報が不正です。");
+                ManifestValidation.Endpoint(entry.Address);
+            }
             return applied;
         }
         catch (Exception error) when (error is JsonException or NullReferenceException)
@@ -74,7 +82,7 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
         return (await PlanCoreAsync(instanceId, manifest, javaPath, memoryMiB, optionalIds, quarantineUnknown, ct)).Plan;
     }
 
-    private async Task<(SyncPlan Plan, IReadOnlyDictionary<string, byte[]> Profiles)> PlanCoreAsync(string instanceId, PackManifest manifest,
+    private async Task<(SyncPlan Plan, IReadOnlyDictionary<string, byte[]> Profiles, ManagedServerEntry? ServerListEntry)> PlanCoreAsync(string instanceId, PackManifest manifest,
         string javaPath, int memoryMiB, ISet<string>? optionalIds, bool quarantineUnknown, CancellationToken ct)
     {
         var selected = ManifestValidation.Selected(manifest, optionalIds);
@@ -129,6 +137,19 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
             if (before.Hash != hash) changes.Add(new("profile", entry.Key, before.Hash is null ? SyncAction.Add : SyncAction.Replace, before.Hash, before.Length, hash, entry.Value.Length, null));
         }
         var generated = profiles.ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
+        var serverListPath = PlayFiles.Child(paths.Game(instanceId), "servers.dat");
+        PlayFiles.NoLinksToRoot(serverListPath);
+        if (File.Exists(serverListPath) && new FileInfo(serverListPath).Length > ServerListFile.MaximumBytes)
+            throw new DistributionException("server_list_conflict", "servers.datのサイズが上限を超えています。元のファイルを保持しています。");
+        var serverListBytes = File.Exists(serverListPath) ? await File.ReadAllBytesAsync(serverListPath, ct) : null;
+        var serverList = ServerListFile.Plan(serverListBytes, manifest.ServerName, manifest.GameEndpoint, previous?.ServerListEntry);
+        if (serverListBytes is null || !serverList.Bytes.AsSpan().SequenceEqual(serverListBytes))
+        {
+            generated["servers.dat"] = serverList.Bytes;
+            changes.Add(new("serverList", "servers.dat", serverListBytes is null ? SyncAction.Add : SyncAction.Replace,
+                serverListBytes is null ? null : Convert.ToHexString(SHA512.HashData(serverListBytes)).ToLowerInvariant(), serverListBytes?.Length ?? 0,
+                Convert.ToHexString(SHA512.HashData(serverList.Bytes)).ToLowerInvariant(), serverList.Bytes.Length, null));
+        }
         if (manifest.SchemaVersion == 2 || previous?.Manifest.SchemaVersion == 2)
         {
             var path = PlayFiles.Child(paths.Game(instanceId), "options.txt");
@@ -147,7 +168,7 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
         var ids = selected.Select(file => file.Id).Order(StringComparer.Ordinal).ToArray();
         var id = Convert.ToHexString(SHA256.HashData(DistributionJson.Bytes(new { manifest.ReleaseId, manifest.Sequence, Changes = changes, Selected = ids, unknown }))).ToLowerInvariant();
         var space = checked(changes.Sum(item => checked(item.AfterLength * 2 + item.BeforeLength)) + (changes.Count > 0 ? 256L * 1024 * 1024 : 8L * 1024 * 1024));
-        return (new(id, instanceId, manifest.ReleaseId, changes, unknown, space, ids), generated);
+        return (new(id, instanceId, manifest.ReleaseId, changes, unknown, space, ids), generated, serverList.ManagedEntry);
     }
 
     public async Task<AppliedPack> SynchronizeAsync(string instanceId, PackManifest manifest, string javaPath, int memoryMiB,
@@ -183,7 +204,7 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
                 {
                     var target = PlayFiles.Child(staging, operation.Scope + "/" + operation.Path);
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                    if (operation.Scope is "profile" or "resourcePackOptions") await File.WriteAllBytesAsync(target, prepared.Profiles[operation.Path], ct);
+                    if (operation.Scope is "profile" or "resourcePackOptions" or "serverList") await File.WriteAllBytesAsync(target, prepared.Profiles[operation.Path], ct);
                     else
                     {
                         var file = manifest.Files.Single(file => file.Id == operation.FileId);
@@ -223,7 +244,7 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
                 progress?.Report(new("applying", ++completed, plan.Changes.Count));
             }
             ct.ThrowIfCancellationRequested();
-            var applied = new AppliedPack(tx, manifest, plan.SelectedIds, DateTimeOffset.UtcNow);
+            var applied = new AppliedPack(tx, manifest, plan.SelectedIds, DateTimeOffset.UtcNow, prepared.ServerListEntry);
             await PlayFiles.WriteAtomicAsync(PlayFiles.Child(StateRoot(instanceId), "applied.json"), DistributionJson.Bytes(applied), ct);
             await FinishAsync(journal, applied, CancellationToken.None);
             progress?.Report(new("complete", plan.Changes.Count, plan.Changes.Count));
@@ -327,7 +348,8 @@ public sealed class SyncEngine(PlayPaths paths, IInstanceActivity activity, IFil
             if (operation.Scope == "game" && operation.Path.Split('/')[0] is not ("mods" or "config" or "defaultconfigs" or "resourcepacks" or "shaderpacks") ||
                 operation.Scope == "profile" && operation.Path is not ("instance.cfg" or "mmc-pack.json") ||
                 operation.Scope == "resourcePackOptions" && (operation.Path != "options.txt" || operation.Options is null) ||
-                operation.Scope is not ("game" or "profile" or "resourcePackOptions") ||
+                operation.Scope == "serverList" && operation.Path != "servers.dat" ||
+                operation.Scope is not ("game" or "profile" or "resourcePackOptions" or "serverList") ||
                 operation.Scope != "resourcePackOptions" && operation.Options is not null ||
                 !targets.Add(operation.Scope + "/" + operation.Path)) throw new DistributionException("invalid_journal", "更新記録の保存先が不正です。");
             if (operation.Options is not null) ResourcePackOptions.Validate(operation.Options);

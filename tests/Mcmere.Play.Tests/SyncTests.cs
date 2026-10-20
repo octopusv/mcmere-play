@@ -34,6 +34,79 @@ public sealed class SyncTests : IDisposable
         _engine.SynchronizeAsync(_instance, manifest, _java, 4096, progress: progress, ct: ct);
 
     [Fact]
+    public async Task ExistingInstallationGetsItsServerListWithoutRedownloadingMods()
+    {
+        var manifest = Pack(1, await Mod("a", "installed"));
+        var applied = await Sync(manifest);
+        File.Delete(Game("servers.dat"));
+        await PlayFiles.WriteAtomicAsync(PlayFiles.Child(_paths.State, _instance + "/applied.json"),
+            DistributionJson.Bytes(new { applied.TransactionId, applied.Manifest, applied.SelectedIds, applied.AppliedAt }));
+        var calls = _provider.Calls;
+        var plan = await _engine.InspectAsync(_instance, manifest, _java, 4096);
+        Assert.Equal("serverList", Assert.Single(plan.Changes).Scope);
+        await Sync(manifest);
+        Assert.Equal(calls, _provider.Calls);
+        Assert.Empty((await _engine.InspectAsync(_instance, manifest, _java, 4096)).Changes);
+        var bytes = await File.ReadAllBytesAsync(Game("servers.dat"));
+        Assert.Equal(bytes, ServerListFile.Plan(bytes, manifest.ServerName, manifest.GameEndpoint, null).Bytes);
+    }
+
+    [Fact]
+    public async Task EachInstanceGetsOnlyItsOwnManagedServer()
+    {
+        var first = Pack(1, await Mod("a", "content"));
+        await Sync(first);
+        var second = first with { ServerPublicId = new string('3', 32), ServerName = "Second", GameEndpoint = "second.example" };
+        await _engine.SynchronizeAsync("second-instance", second, _java, 4096);
+        Assert.Equal(ServerListFile.Plan(null, first.ServerName, first.GameEndpoint, null).Bytes, await File.ReadAllBytesAsync(Game("servers.dat")));
+        Assert.Equal(ServerListFile.Plan(null, second.ServerName, second.GameEndpoint, null).Bytes,
+            await File.ReadAllBytesAsync(PlayFiles.Child(_paths.Game("second-instance"), "servers.dat")));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InterruptedServerListUpdateRecoversOrPreservesLaterUserEdits(bool editAfterInterruption)
+    {
+        var first = Pack(1, await Mod("a", "content"));
+        var applied = await Sync(first);
+        var original = await File.ReadAllBytesAsync(Game("servers.dat"));
+        var next = first with { Sequence = 2, ReleaseId = new string('4', 32), GameEndpoint = "new.example" };
+        using var cancel = new CancellationTokenSource();
+        var progress = new ImmediateProgress(update =>
+        {
+            if (update.Stage == "applying" && !File.ReadAllBytes(Game("servers.dat")).AsSpan().SequenceEqual(original)) cancel.Cancel();
+        });
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Sync(next, progress, cancel.Token));
+        if (editAfterInterruption)
+        {
+            var personal = ServerListFile.Plan(await File.ReadAllBytesAsync(Game("servers.dat")), "Personal", "personal.example", null).Bytes;
+            await File.WriteAllBytesAsync(Game("servers.dat"), personal);
+            Assert.Equal("recovery_conflict", (await Assert.ThrowsAsync<DistributionException>(() => _engine.RecoverAsync(_instance))).Code);
+            Assert.Equal(personal, await File.ReadAllBytesAsync(Game("servers.dat")));
+        }
+        else
+        {
+            await _engine.RecoverAsync(_instance);
+            Assert.Equal(original, await File.ReadAllBytesAsync(Game("servers.dat")));
+            Assert.Equal(applied.ServerListEntry, (await _engine.AppliedAsync(_instance))!.ServerListEntry);
+            await Sync(next);
+            Assert.Equal("new.example", (await _engine.AppliedAsync(_instance))!.ServerListEntry!.Address);
+        }
+    }
+
+    [Fact]
+    public async Task InvalidServerListDoesNotOverwriteTheOriginalOrInstallMods()
+    {
+        Directory.CreateDirectory(_paths.Game(_instance));
+        await File.WriteAllTextAsync(Game("servers.dat"), "not nbt");
+        var manifest = Pack(1, await Mod("a", "content"));
+        Assert.Equal("server_list_conflict", (await Assert.ThrowsAsync<DistributionException>(() => Sync(manifest))).Code);
+        Assert.Equal("not nbt", await File.ReadAllTextAsync(Game("servers.dat")));
+        Assert.Equal(0, _provider.Calls);
+    }
+
+    [Fact]
     public async Task InstallsAndUpdatesOnlyOwnedFilesWhileKeepingSettingsAndSaves()
     {
         var a = await Mod("a", "version one");

@@ -4,7 +4,7 @@
 
 遊びたいMinecraftサーバーに合わせて、Java・NeoForge・MODの環境を準備するWindowsアプリです。必要なファイルやバージョンを確認し、サーバー専用のフォルダーに揃えます。Java 21とJava 25の環境をサーバーごとに独立して管理できます。
 
-**[Windows用Setupをダウンロード（v0.1.3）](https://github.com/octopusv/mcmere-play/releases/download/v0.1.3/mcmere-play-Setup-0.1.3.exe)** · [リリース一覧](https://github.com/octopusv/mcmere-play/releases)
+**[Windows用Setupをダウンロード（v0.1.5）](https://github.com/octopusv/mcmere-play/releases/download/v0.1.5/mcmere-play-Setup-0.1.5.exe)** · [リリース一覧](https://github.com/octopusv/mcmere-play/releases)
 
 現在はプレビュー版です。通常は上のSetupを1つダウンロードして使ってください。ZIP版はリリース一覧から取得できます。
 
@@ -23,7 +23,7 @@ GoogleログインやPlay用のアカウント登録はありません。ゲー�
 
 ### 1. mcmere Playをインストールする
 
-1. 上のリンクから`mcmere-play-Setup-0.1.3.exe`をダウンロードして起動します。
+1. 上のリンクから`mcmere-play-Setup-0.1.5.exe`をダウンロードして起動します。
 2. 保存先を確認して**「インストール」**を押します。保存先は初期設定のままで使えます。
 3. 完了したら**「mcmere Playを開く」**を押します。次回からはWindowsのスタートメニューで「mcmere Play」を検索して開けます。
 
@@ -45,7 +45,9 @@ WebView2 Runtimeの導入が表示された場合は、Setupの案内に従っ�
 2. Prismが開いたら、初回設定の案内を進め、Minecraft: Java Editionを遊べるMicrosoftアカウントにログインします。
 3. Prismで対象サーバーのインスタンスを起動し、Minecraft・NeoForgeの初回取得を完了します。インスタンスは、そのサーバー専用のプレイ環境です。
 
-Playから起動すると接続先もPrismへ渡されます。ゲームがタイトル画面で止まった場合は、「マルチプレイ」から管理者に案内されたサーバーへ接続してください。
+Playから起動すると接続先もPrismへ渡されます。「準備して参加」では、その環境の「マルチプレイ」一覧にもサーバーを登録します。切断してタイトル画面に戻った後は、一覧からサーバーを選ぶだけで再接続できます。
+
+既存環境もPlay更新後の「準備して参加」で登録されます。利用者が追加したサーバー、表示名、アイコンや設定は保持します。Playが追加した接続先は公開版のアドレス変更に追従し、同じアドレスを重複登録しません。ゲームやPrismの使用中には一覧を更新しません。
 
 **Prismが見つからないときは、Playで対象サーバーを選び、「設定」タブ →「Prismを開く」を押してください。** このボタンはPrismの準備が終わると使えるようになります。
 
