@@ -58,6 +58,14 @@ mcmere Playはmcmere本体とは別のバージョン、Setup、GitHub Release�
 
 GitHub ActionsのBuild release packageはPRで検証用0.1.0を生成し、手動実行では数値バージョンを指定できる。生成物はActions artifactであり、自動的にはReleaseを公開しない。署名秘密鍵はCIへ渡さず、公開前の手順で署名済み更新情報を作成する。EXEをコード署名する場合も、最終的な署名後のファイルに対して更新情報を生成する。
 
+### Actions成果物の保持
+
+PRでもSetup・ZIPの生成、インストーラーの導入・起動・再導入・削除・データ保持、証明書helperの検証を省略しない。成功したPRでは配布用EXE/ZIPをアップロードせず、各工程の結果・対象commit・SHA256SUMS・installerのresult.jsonをActionsのSummaryに記録する。失敗・キャンセル時は、生成済みのinstaller evidenceを7日保持する。工程開始前に失敗した場合は証跡ファイルがないこともあるため、ジョブログを参照する。
+
+配布候補の取得や成功時の画像確認には、対象refを選んでpackage workflowを手動実行する。全検証成功時だけSetup・ZIP・SHA256SUMSをアップロードし、installer evidenceとともに7日保持する。リリース用資材は期限内にダウンロードして上記の公開前検証を行い、確認した資材をDraft Releaseへ添付する。Actions artifactを長期保管場所にはしない。
+
+Windows buildの参加者UI検証も全実行で継続する。成功したpush/PRではSummaryに結果を記録し、画像はアップロードしない。失敗・キャンセル時、または手動実行時はparticipant-ui画像とJSONを7日保持する。成功時の画像レビューが必要なら同じrefでWindows buildを手動実行する。既存artifactの有効期限やジョブログの保持設定は、この変更では更新されない。
+
 ## 保存先変更の検証
 
 ```powershell

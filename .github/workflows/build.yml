@@ -26,14 +26,38 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - name: Build and test
+        id: build_test
         shell: pwsh
         run: ./scripts/Build.ps1
       - name: Verify participant UI
+        id: participant_ui
         shell: pwsh
         run: node scripts/browser-smoke.cjs
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - name: Record validation summary
         if: always()
+        shell: pwsh
+        env:
+          BUILD_OUTCOME: ${{ steps.build_test.outcome }}
+          UI_OUTCOME: ${{ steps.participant_ui.outcome }}
+        run: |
+          @(
+            '## Participant validation'
+            "Build and tests: $env:BUILD_OUTCOME"
+            "Participant UI: $env:UI_OUTCOME"
+            "Commit: $env:GITHUB_SHA; run: $env:GITHUB_RUN_ID; attempt: $env:GITHUB_RUN_ATTEMPT"
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          if (Test-Path -LiteralPath 'artifacts/qa/browser/result.json') {
+            '```json' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+            Get-Content -LiteralPath 'artifacts/qa/browser/result.json' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+            '```' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          }
+      # Successful routine runs keep their result in the summary and job logs.
+      # A manual run keeps screenshots for visual review, including on success.
+      - name: Upload participant UI evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: failure() || cancelled() || github.event_name == 'workflow_dispatch'
         with:
           name: participant-ui-${{ github.sha }}
           path: artifacts/qa/browser/
           retention-days: 7
+          if-no-files-found: ignore
